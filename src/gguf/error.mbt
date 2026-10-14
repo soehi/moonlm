@@ -41,6 +41,10 @@ pub(all) suberror GgufError {
   DataSectionOutOfRange(data_start~ : Int64, buffer_len~ : Int64)
   /// A tensor's `offset` plus its byte size runs past the data section.
   TensorOutOfRange(name~ : String, offset~ : Int64, nbytes~ : Int64, data_len~ : Int64)
+  /// A tensor's type is understood but this build cannot dequantize it.
+  TensorNotSupported(name~ : String, type_id~ : UInt, type_name~ : String)
+  /// The tensor package rejected a payload that GGUF-level checks had passed.
+  DequantFailed(name~ : String, reason~ : String)
 } derive(Eq, Debug)
 
 ///|
@@ -79,6 +83,9 @@ pub fn GgufError::message(self : GgufError) -> String {
       "data section starts at \{data_start}, past the \{buffer_len}-byte buffer"
     TensorOutOfRange(name~, offset~, nbytes~, data_len~) =>
       "tensor \{name}: bytes [\{offset}, \{offset + nbytes}) fall outside the \{data_len}-byte data section"
+    TensorNotSupported(name~, type_id~, type_name~) =>
+      "tensor \{name}: type \{type_id} (\{type_name}) cannot be dequantized by this build"
+    DequantFailed(name~, reason~) => "tensor \{name}: dequantization failed: \{reason}"
   }
 }
 
