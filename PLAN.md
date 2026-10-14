@@ -3,7 +3,7 @@
 > 用 MoonBit 编写的全本地 LLM 推理引擎 + 强类型 Agent 运行时。
 > 零 API 调用、零数据外传、一次编译同时跑在 **浏览器 (Wasm-GC)** 和 **native 边缘设备** 上。
 
-- 状态：规划阶段（未开始编码）
+- 状态：M0 完成，M1 待开始
 - 许可证计划：Apache-2.0
 - 建议仓库名：`moonlm`（Moon + LLM）
 - 前置说明：`moonsh` 为已废弃项目，本项目从零开始，不继承其代码。
@@ -104,6 +104,11 @@ moonlm/
 
 **目标**：把"读模型"这件事做扎实。这是全项目最可测、风险最低的起点。
 
+> **状态：已完成。** 实现见 `src/gguf/`、`src/tensor/`、`src/cli/`；
+> 格式与踩坑记录见 `docs/gguf-notes.md`；对拍脚本见 `tools/check_models.py`。
+> 交付物：`inspect` 子命令另支持 `--json`（便于与 `gguf_dump` 逐字段对比）与
+> `dequant`（导出单张量解码值，用于真实模型数值对拍）。
+
 **任务**
 1. 建仓库脚手架（moon.mod、CI、目录结构、Apache-2.0）
 2. `gguf/`：magic/version 校验、metadata KV 全类型解析（u8…f64、string、array、nested）、tensor 目录（名称/维度/类型/偏移）、对齐与 padding 处理
@@ -111,10 +116,17 @@ moonlm/
 4. CLI 子命令 `moonlm inspect <model.gguf>`：打印架构、层数、词表大小、张量清单与体积分布
 
 **验收标准（DoD）**
-- [ ] 对 SmolLM2-135M 的 Q8_0 与 Q4_K_M 两个 GGUF 文件，`inspect` 输出与 `llama.cpp` 的 `gguf_dump` 元数据一致
-- [ ] 各量化格式的反量化输出与 llama.cpp 参考实现的黄金测试向量逐块一致（误差 ≤ 1e-6）
-- [ ] 单元测试覆盖畸形输入（截断文件、错误 magic、未知 KV 类型）——报错而非崩溃
-- [ ] CI 通过（native + wasm-gc 双后端编译）
+- [x] 对 SmolLM2-135M 的 Q8_0 与 Q4_K_M 两个 GGUF 文件，`inspect` 输出与 `llama.cpp` 的 `gguf_dump` 元数据一致
+- [x] 各量化格式的反量化输出与 llama.cpp 参考实现的黄金测试向量逐块一致（误差 ≤ 1e-6）
+- [x] 单元测试覆盖畸形输入（截断文件、错误 magic、未知 KV 类型）——报错而非崩溃
+- [x] CI 通过（native + wasm-gc 双后端编译）
+
+**补充说明（与原始规划的差异）**
+
+- Q4_K_M 用的是 bartowski 的混精文件：272 个张量中 166 个是 `q5_0`（M0 不解码）。
+  CLI 会显式列出无法反量化的张量，不静默略过。目录字段仍全部对拍一致。
+- 除目录对拍外，额外做了 **F32/Q8_0/Q4_K/Q6_K 解码数值**的真实模型对拍，与
+  llama.cpp 的 Python `gguf` 读出器逐元素一致（相对误差 ≤ 1e-6）。
 
 ---
 

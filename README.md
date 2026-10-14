@@ -5,21 +5,36 @@
 
 ## 当前进度
 
-**M0 — 地基：GGUF 解析与量化格式**（进行中）
+**M0 — 地基：GGUF 解析与量化格式** ✅ **完成**
 
-- [x] 仓库脚手架：Apache-2.0、双 target CI
-- [ ] `gguf/`：header / metadata KV（12 种类型 + 嵌套数组）/ 张量目录 / 对齐
-- [ ] `tensor/`：F32 / F16 / Q8_0 / Q4_0 / Q4_K / Q6_K 反量化
-- [ ] `cli/`：`moonlm inspect <model.gguf>`
+| 交付物 | 状态 |
+|---|---|
+| `src/gguf/`：header / metadata KV（12 种类型 + 嵌套数组）/ 张量目录 / 对齐 | ✅ |
+| `src/tensor/`：F32 / F16 / Q4_0 / Q8_0 / Q4_K / Q6_K 反量化 | ✅ |
+| `src/cli/`：`moonlm inspect <model.gguf>`（native，另支持 `--json`、`dequant`） | ✅ |
+| 双 target（native + wasm-gc）`check` / `test` / `build` 全绿 | ✅ |
+
+**验收结果**
+
+- 64 个单元 / 黄金 / 畸形输入测试在 native 与 wasm-gc 上全部通过。
+- 6 种类型反量化与 llama.cpp 参考实现的黄金向量误差 ≤ 1e-6。
+- 真实模型对拍（SmolLM2-135M-Instruct，Q8_0 与 Q4_K_M 各一份）与 llama.cpp 的
+  `gguf` 读出器一致：header、全部 37 个 metadata 键、272 个张量
+  （名称 / 类型 / 维度 / 元素数 / offset / 字节数），以及 F32 / Q8_0 / Q4_K / Q6_K
+  的**解码数值**。
+- 畸形输入（截断、坏 magic、未知类型、计数溢出、对齐错误、超过 4 维、张量越界、
+  九层嵌套数组）全部返回带偏移量的错误，无 panic、无越界。
 
 后续阶段（Tokenizer、Transformer 前向、浏览器 Demo、Agent 运行时）见 [PLAN.md](PLAN.md)。
 
 ## 设计约束
 
-- `gguf/`、`tensor/` 为**纯 MoonBit**：无 FFI、无第三方依赖，同时通过 `native` 与 `wasm-gc` 编译。
+- `gguf/`、`tensor/` 为**纯 MoonBit**：无 FFI、无第三方依赖，同时通过 `native` 与 `wasm-gc`。
+  CLI 的文件读取是唯一例外，用 `extern "C"` + native stub，并单独按 target 隔离。
 - 只做**反量化**（量化交给 llama.cpp 现成模型），只**读** GGUF，不写。
 - 容错优先：任何畸形输入返回带出错偏移的错误值，不 panic、不下标越界。
 - 所有整数按小端解析；偏移与长度用 `Int64`/`UInt64`，不用 32 位 `Int` 承接。
+- 大 metadata 数组（词表 49k 项）折叠成摘要，不整体物化。
 
 ## 构建与测试
 
@@ -28,7 +43,7 @@
 ```bash
 moon check   --target native    # 双 target 静态检查
 moon check   --target wasm-gc
-moon test    --target native    # 单元 + 黄金向量测试
+moon test    --target native    # 单元 + 黄金向量 + 畸形输入
 moon test    --target wasm-gc
 moon build   --target native
 moon build   --target wasm-gc
@@ -37,8 +52,22 @@ moon build   --target wasm-gc
 CLI（仅 native）：
 
 ```bash
-moon run src/cli --target native -- inspect path/to/model.gguf
+moon run src/cli --target native -- inspect path/to/model.gguf          # 文本报告
+moon run src/cli --target native -- inspect path/to/model.gguf --json   # JSON 报告
+moon run src/cli --target native -- dequant path/to/model.gguf tensor_embd.weight --limit 8
 ```
+
+退出码：`0` 成功，`1` 文件不可读 / 不是 GGUF，`2` 用法错误。
+
+## 工具
+
+```bash
+python tools/gen_fixtures.py     # 重新生成测试夹具（合成 GGUF + 黄金向量 + 畸形输入）
+python tools/check_models.py <model.gguf> ...   # 与 llama.cpp 的 gguf 读出器对拍
+```
+
+`check_models.py` 需要 `pip install gguf numpy`；模型文件可从 HuggingFace 镜像获取
+（如 `bartowski/SmolLM2-135M-Instruct-GGUF` 的 `Q8_0` 与 `Q4_K_M`）。
 
 ## 许可证
 
@@ -48,4 +77,4 @@ moon run src/cli --target native -- inspect path/to/model.gguf
 
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) — GGUF 格式与 ggml 反量化算法的权威定义
 - [PLAN.md](PLAN.md) — 完整技术方案与阶段规划
-- [docs/gguf-notes.md](docs/gguf-notes.md) — GGUF 格式图与实现笔记
+- [docs/gguf-notes.md](docs/gguf-notes.md) — GGUF 格式图、位布局与实现踩坑笔记
