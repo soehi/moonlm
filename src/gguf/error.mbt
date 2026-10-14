@@ -16,8 +16,6 @@ pub(all) suberror GgufError {
   UnsupportedVersion(version~ : UInt, supported_max~ : UInt)
   /// A metadata value carried a `value_type` outside 0..12.
   UnknownValueType(offset~ : Int64, type_id~ : UInt)
-  /// A metadata key was not valid UTF-8.
-  BadKeyEncoding(offset~ : Int64, length~ : Int64)
   /// `general.alignment` was present but not a power of two, or zero.
   BadAlignment(value~ : UInt)
   /// `general.alignment` was present with a type other than u32.
@@ -35,8 +33,6 @@ pub(all) suberror GgufError {
   TensorCountImplausible(count~ : UInt64, remaining~ : Int64)
   /// A tensor declared more dimensions than GGUF allows.
   TooManyDims(offset~ : Int64, n_dims~ : UInt, max_dims~ : Int)
-  /// A tensor dimension was zero.
-  ZeroDim(offset~ : Int64, index~ : UInt)
   /// The data section starts past the end of the buffer.
   DataSectionOutOfRange(data_start~ : Int64, buffer_len~ : Int64)
   /// A tensor's `offset` plus its byte size runs past the data section.
@@ -60,8 +56,6 @@ pub fn GgufError::message(self : GgufError) -> String {
       "unsupported GGUF version \{version}: this build accepts 2..\{supported_max}"
     UnknownValueType(offset~, type_id~) =>
       "unknown metadata value type \{type_id} at offset \{offset}"
-    BadKeyEncoding(offset~, length~) =>
-      "metadata key of \{length} bytes at offset \{offset} is not valid UTF-8"
     BadAlignment(value~) => "general.alignment = \{value} is not a positive power of two"
     AlignmentWrongType(type_id~) =>
       "general.alignment has type \{type_id}, expected u32 (4)"
@@ -77,8 +71,6 @@ pub fn GgufError::message(self : GgufError) -> String {
       "tensor_count \{count} cannot fit in the remaining \{remaining} bytes"
     TooManyDims(offset~, n_dims~, max_dims~) =>
       "tensor at offset \{offset} declares \{n_dims} dimensions, maximum is \{max_dims}"
-    ZeroDim(offset~, index~) =>
-      "tensor dimension \{index} at offset \{offset} is zero"
     DataSectionOutOfRange(data_start~, buffer_len~) =>
       "data section starts at \{data_start}, past the \{buffer_len}-byte buffer"
     TensorOutOfRange(name~, offset~, nbytes~, data_len~) =>
