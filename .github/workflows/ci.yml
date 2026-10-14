@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: MoonBit (native + wasm-gc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain version
+        run: moon version
+
+      - name: Static check (native)
+        run: moon check --target native
+
+      - name: Static check (wasm-gc)
+        run: moon check --target wasm-gc
+
+      - name: Test (native)
+        run: moon test --target native
+
+      - name: Test (wasm-gc)
+        run: moon test --target wasm-gc
+
+      - name: Build (native)
+        run: moon build --target native
+
+      - name: Build (wasm-gc)
+        run: moon build --target wasm-gc
