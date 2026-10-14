@@ -94,7 +94,7 @@ pub fn GgufError::message(self : GgufError) -> String {
 /// error message shows what the file actually started with.
 fn magic_to_text(found : UInt) -> String {
   let sb = StringBuilder::new()
-  for shift = 24; shift >= 0; shift = shift - 8 {
+  for shift = 0; shift <= 24; shift = shift + 8 {
     let b = ((found >> shift) & 0xFF).reinterpret_as_int()
     sb.write_char(if b >= 32 && b < 127 { b.unsafe_to_char() } else { '.' })
   }

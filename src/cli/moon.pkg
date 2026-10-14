@@ -1,0 +1,26 @@
+// `moonlm` command line entry point.
+//
+// Native only in substance: `inspect` reads a model from disk and the
+// `extern "C"` file reader cannot be compiled for wasm. The wasm-gc target
+// still has to *build* this package, so a placeholder `main` is compiled
+// instead. Keeping the CLI package inside the module means one `moon check`
+// and one `moon build` cover both backends, which is what CI asserts.
+
+import {
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/env",
+  "moonbitlang/core/json",
+  "soehi/moonlm/gguf",
+  "soehi/moonlm/tensor",
+}
+
+pkgtype(kind: "executable")
+
+options(
+  "native-stub": [ "stubs.c" ],
+  targets: {
+    "file_native.mbt": [ "native" ],
+    "main_native.mbt": [ "native" ],
+    "main_wasm.mbt": [ "wasm", "wasm-gc" ],
+  },
+)
