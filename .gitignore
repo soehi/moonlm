@@ -3,3 +3,5 @@ target/
 .mooncakes/
 .moonagent/
 *.gguf
+__pycache__/
+*.pyc
