@@ -185,7 +185,11 @@ fn format_bytes(n : Int64) -> String {
 /// Tensor sizes are emitted only where this build can compute them
 /// (`nbytes.on_disk`), so a file with a type outside the enum stays comparable
 /// instead of claiming a size it cannot know.
-fn render_json(path : String, f : @gguf.GgufFile) -> String {
+fn render_json(
+  path : String,
+  f : @gguf.GgufFile,
+  unsupported : Array[String],
+) -> String {
   let metadata_map : Map[String, Json] = Map([])
   for entry in f.metadata {
     let (key, value) = entry
@@ -219,6 +223,7 @@ fn render_json(path : String, f : @gguf.GgufFile) -> String {
   root_map["data_start"] = Json::number(f.data_start.to_double())
   root_map["metadata"] = metadata
   root_map["tensors"] = tensors
+  root_map["unsupported_types"] = Json::array(unsupported.map(Json::string))
   let root = Json::object(root_map)
   root.stringify(indent=2)
 }
@@ -279,14 +284,102 @@ fn usage() -> String {
     "",
     "Usage:",
     "  moonlm inspect <model.gguf> [--json]",
+    "  moonlm dequant <model.gguf> <tensor> [--limit N]",
     "",
     "Commands:",
     "  inspect    Summarize a GGUF model: version, metadata, tensor inventory",
+    "  dequant    Dequantize one tensor and print its leading values",
     "",
     "Options:",
     "  --json     Emit the report as JSON instead of text",
     "  -h, --help Show this message",
   ].join("\n")
+}
+
+///|
+/// `moonlm dequant <model.gguf> <tensor> [--limit N]` — dequantize one tensor
+/// and print its leading values.
+///
+/// This exists so the real-model cross-check can compare *decoded weights*, not
+/// just the directory. Comparing directory metadata proves the container is read
+/// correctly; comparing values proves the block layouts are.
+fn run_dequant(args : Array[String]) -> Int {
+  if args.length() < 4 {
+    println("error: 'dequant' needs a model path and a tensor name\n")
+    println(usage())
+    return 2
+  }
+  let path = args[2]
+  let tensor_name = args[3]
+  let mut limit = 16
+  if args.length() > 5 && args[4] == "--limit" {
+    // `parse_int` raises on bad input; a malformed flag value is a usage error,
+    // so the raise is caught here and reported rather than propagated.
+    let parsed : Int? = try @string.parse_int(args[5][:]) catch {
+      _ => None
+    } noraise {
+      n => Some(n)
+    }
+    match parsed {
+      Some(n) => limit = n
+      None => {
+        println("error: --limit needs a number, got '\{args[5]}'")
+        return 2
+      }
+    }
+  }
+  let buf = match read_file(path) {
+    Ok(b) => b
+    Err(e) => {
+      println("error: \{e}")
+      return 1
+    }
+  }
+  let f = match @gguf.parse(buf) {
+    Err(e) => {
+      println("error: \{path} is not a readable GGUF file")
+      println("  \{e.message()}")
+      return 1
+    }
+    Ok(f) => f
+  }
+  let index = match f.index_of_tensor(tensor_name) {
+    Some(i) => i
+    None => {
+      println("error: no tensor named '\{tensor_name}' in \{path}")
+      return 1
+    }
+  }
+  let t = f.tensors[index]
+  match f.dequant_tensor(index) {
+    Err(e) => {
+      println("error: \{e.message()}")
+      1
+    }
+    Ok(values) => {
+      // Emit machine-readable lines: the shape, then index/value pairs, so the
+      // checker can compare a subset without parsing prose.
+      println(
+        "tensor \{t.name} type \{t.ggml_type().name} dims \{t.dims.map(fn(d) { d.to_string() }).join(" x ")} n_elems \{t.n_elems}",
+      )
+      let n = if limit < values.length() { limit } else { values.length() }
+      for i = 0; i < n; i = i + 1 {
+        println("\{i} \{values[i].to_double()}")
+      }
+      0
+    }
+  }
+}
+
+///|
+/// Find a tensor by name, returning its directory index.
+fn @gguf.GgufFile::index_of_tensor(self : @gguf.GgufFile, name : String) -> Int? {
+  for i, t in self.tensors {
+    if t.name == name {
+      return Some(i)
+    }
+  }
+  None
 }
 
 ///|
@@ -300,6 +393,9 @@ fn run(args : Array[String]) -> Int {
   if subcommand == "-h" || subcommand == "--help" || subcommand == "help" {
     println(usage())
     return 0
+  }
+  if subcommand == "dequant" {
+    return run_dequant(args)
   }
   if subcommand != "inspect" {
     println("error: unknown command '\{subcommand}'\n")
@@ -336,14 +432,17 @@ fn run(args : Array[String]) -> Int {
         }
       }
       if want_json {
-        println(render_json(path, f))
+        println(render_json(path, f, unsupported))
       } else {
         println(render_text(path, f))
-      }
-      if unsupported.length() > 0 {
-        println(
-          "\nnote: \{unsupported.length()} tensor(s) use types this build cannot dequantize:\n  \{unsupported.join("\n  ")}",
-        )
+        // In text mode the note is a trailing paragraph. Under --json it goes
+        // inside the document as `unsupported_types` instead, so that stdout
+        // remains a single parseable JSON value.
+        if unsupported.length() > 0 {
+          println(
+            "\nnote: \{unsupported.length()} tensor(s) use types this build cannot dequantize:\n  \{unsupported.join("\n  ")}",
+          )
+        }
       }
       0
     }
