@@ -82,3 +82,48 @@ extern "C" fn ml_exit(code : Int) -> Unit = "ml_exit"
 pub fn exit_with(code : Int) -> Unit {
   ml_exit(code)
 }
+
+///|
+#borrow(buf, n)
+extern "C" fn ml_stdin_read(buf : FixedArray[Byte], n : Int) -> Int = "ml_stdin_read"
+
+///|
+/// Read one line from stdin, without the trailing newline.
+///
+/// Returns `None` at end of input, which is how interactive chat knows to stop.
+/// A fixed-size buffer is used because lines in a chat session are short; a
+/// longer line is returned truncated rather than dropped.
+pub fn read_line() -> String? {
+  let buf : FixedArray[Byte] = FixedArray::make(4096, b'\x00')
+  let n = ml_stdin_read(buf, buf.length())
+  if n <= 0 {
+    return None
+  }
+  let raw = Bytes::from_array(buf[:n])
+  let text = @utf8.decode_lossy(raw.view())
+  // Trim the line terminator the C side left in place.
+  let mut end = text.length()
+  while end > 0 {
+    let ch = text[end - 1]
+    if ch == '\n' || ch == '\r' {
+      end = end - 1
+    } else {
+      break
+    }
+  }
+  Some(text[:end].to_owned())
+}
+
+///|
+#borrow(s)
+extern "C" fn ml_puts(s : Bytes) -> Int = "ml_puts"
+
+///|
+/// Write `s` to stdout without a trailing newline, then flush.
+///
+/// Core only offers `println`, which is line-buffered; streaming a token at a
+/// time needs the bytes to reach the terminal immediately, so this goes through
+/// libc and flushes explicitly.
+pub fn print_raw(s : String) -> Unit {
+  ml_puts(@utf8.encode(s) + b"\x00") |> ignore
+}

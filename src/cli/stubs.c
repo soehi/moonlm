@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <moonbit.h>
 
 MOONBIT_FFI_EXPORT
@@ -69,4 +70,27 @@ int64_t ml_read(char *buf, void *handle, int64_t n) {
 MOONBIT_FFI_EXPORT
 void ml_exit(int32_t code) {
   exit(code);
+}
+
+/*
+ * Read one line from stdin into a caller-owned buffer, including the trailing
+ * newline and without NUL termination. Returns the byte count, or 0 at EOF.
+ */
+MOONBIT_FFI_EXPORT
+int32_t ml_stdin_read(char *buf, int32_t n) {
+  if (fgets(buf, n, stdin) == NULL) {
+    return 0;
+  }
+  return (int32_t)strlen(buf);
+}
+
+/*
+ * Write a NUL-terminated string to stdout and flush, so streamed tokens appear
+ * as they are produced rather than at process exit.
+ */
+MOONBIT_FFI_EXPORT
+int32_t ml_puts(const char *s) {
+  fputs(s, stdout);
+  fflush(stdout);
+  return 0;
 }

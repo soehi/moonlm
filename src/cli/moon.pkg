@@ -11,8 +11,12 @@ import {
   "moonbitlang/core/env",
   "moonbitlang/core/json",
   "moonbitlang/core/string",
+  "soehi/moonlm/engine",
   "soehi/moonlm/gguf",
+  "soehi/moonlm/model",
+  "soehi/moonlm/sampler",
   "soehi/moonlm/tensor",
+  "soehi/moonlm/tokenizer",
 }
 
 pkgtype(kind: "executable")
@@ -22,6 +26,8 @@ options(
   targets: {
     "file_native.mbt": [ "native" ],
     "main_native.mbt": [ "native" ],
+    "gen_native.mbt": [ "native" ],
+    "bench_native.mbt": [ "native" ],
     "main_wasm.mbt": [ "wasm", "wasm-gc" ],
   },
 )

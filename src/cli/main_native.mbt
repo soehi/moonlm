@@ -285,14 +285,30 @@ fn usage() -> String {
     "Usage:",
     "  moonlm inspect <model.gguf> [--json]",
     "  moonlm dequant <model.gguf> <tensor> [--limit N]",
+    "  moonlm tokenize <model.gguf> <text>",
+    "  moonlm generate <model.gguf> <prompt> [options]",
+    "  moonlm chat <model.gguf> [options]",
+    "  moonlm bench <model.gguf> [--tokens N]",
     "",
     "Commands:",
     "  inspect    Summarize a GGUF model: version, metadata, tensor inventory",
     "  dequant    Dequantize one tensor and print its leading values",
+    "  tokenize   Show how a string encodes to token ids",
+    "  generate   Generate a continuation for a prompt",
+    "  chat       Interactive multi-turn chat (reads stdin)",
+    "  bench      Measure prefill and decode speed",
     "",
     "Options:",
     "  --json     Emit the report as JSON instead of text",
     "  -h, --help Show this message",
+    "",
+    "generate/chat options:",
+    "  --max-tokens N      Tokens to generate (default 128)",
+    "  --temperature T     Sampling temperature (default 0 = greedy)",
+    "  --top-k K           Keep the K best tokens",
+    "  --top-p P           Nucleus sampling threshold",
+    "  --seed N            PRNG seed (default 42)",
+    "  --raw               Do not wrap the prompt in the chat template",
   ].join("\n")
 }
 
@@ -385,6 +401,30 @@ fn run(args : Array[String]) -> Int {
   }
   if subcommand == "dequant" {
     return run_dequant(args)
+  }
+  if subcommand == "tokenize" {
+    return run_tokenize(args)
+  }
+  if subcommand == "generate" {
+    return run_generate(args)
+  }
+  if subcommand == "chat" {
+    return run_chat(args)
+  }
+  if subcommand == "bench" {
+    return run_bench(args)
+  }
+  if subcommand == "profile" {
+    if args.length() < 3 {
+      println("error: 'profile' needs a model path")
+      return 2
+    }
+    let iters = if args.length() > 4 && args[3] == "--iters" {
+      parse_int_arg(args[4]).unwrap_or(10)
+    } else {
+      10
+    }
+    return profile_decode(args[2], iters)
   }
   if subcommand != "inspect" {
     println("error: unknown command '\{subcommand}'\n")

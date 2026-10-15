@@ -1,0 +1,7 @@
+// Token sampling: greedy, temperature, top-k, top-p.
+//
+// Pure MoonBit, no FFI. Must build and test on both `native` and `wasm-gc`.
+
+import {
+  "moonbitlang/core/math",
+}

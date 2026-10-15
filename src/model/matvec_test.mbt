@@ -92,3 +92,4 @@ test "matvec_at honours input offsets" {
     }
   }
 }
+

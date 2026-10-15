@@ -18,7 +18,7 @@
 /// `Byte` is unsigned in this toolchain, so the sign extension is explicit.
 /// Local to this package because the equivalent in `tensor/` takes a `Bytes`
 /// and an `Int64` offset, and adapting per row would copy the row.
-fn bv_sbyte(buf : BytesView, off : Int) -> Int {
+pub fn bv_sbyte(buf : Bytes, off : Int) -> Int {
   let u = buf[off].to_int()
   if u >= 128 {
     u - 256
@@ -33,7 +33,7 @@ fn bv_sbyte(buf : BytesView, off : Int) -> Int {
 /// Mirrors `get_scale_min_k4` in ggml-quants.c: sub-blocks 0..3 take their low
 /// 6 bits from `q[j]`/`q[j+4]`; sub-blocks 4..7 take their low nibbles from
 /// `q[j+4]` and their high 2 bits from the top bits of `q[j-4]`/`q[j]`.
-fn bv_scale_min_k4(j : Int, buf : BytesView, q_off : Int) -> (Int, Int) {
+fn bv_scale_min_k4(j : Int, buf : Bytes, q_off : Int) -> (Int, Int) {
   if j < 4 {
     (buf[q_off + j].to_int() & 63, buf[q_off + j + 4].to_int() & 63)
   } else {
@@ -140,17 +140,11 @@ pub fn Matrix::dequant_row(
   if row < 0 || row >= self.rows {
     return Err(BadValue(key=self.name, detail="row \{row} out of range"))
   }
-  let row_start = self.data.view(
-    start=row * self.row_bytes,
-    end=(row + 1) * self.row_bytes,
-  )
   let bs = self.ty.block_size
   let n_blocks = self.cols / bs
   match self.ty.id {
     0 | 1 | 2 | 8 | 12 | 14 => {
-      // Reuse the dot kernels' block readers by scattering through a one-hot
-      // vector is wasteful; decode blocks directly instead.
-      decode_row_into(self.ty, row_start, out, n_blocks)
+      decode_row_into(self.ty, self.data, row * self.row_bytes, out, n_blocks)
       Ok(())
     }
     _ =>
@@ -162,27 +156,28 @@ pub fn Matrix::dequant_row(
 /// Decode every block of a row into consecutive output slots.
 fn decode_row_into(
   ty : @tensor.GgmlType,
-  row : BytesView,
+  data : Bytes,
+  row_off : Int,
   out : FixedArray[Float],
   n_blocks : Int,
 ) -> Unit {
   match ty.id {
     0 => {
       for b = 0; b < n_blocks; b = b + 1 {
-        out[b] = Float::reinterpret_from_uint(row.unsafe_read_uint32_le(b * 4))
+        out[b] = Float::reinterpret_from_uint(data.unsafe_read_uint32_le(row_off + b * 4))
       }
     }
     1 => {
       for b = 0; b < n_blocks; b = b + 1 {
-        out[b] = @tensor.half_to_float(row.unsafe_read_uint16_le(b * 2).to_int())
+        out[b] = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + b * 2).to_int())
       }
     }
     2 => {
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 18
-        let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
+        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base).to_int())
         for j = 0; j < 16; j = j + 1 {
-          let byte = row[base + 2 + j].to_int()
+          let byte = data[row_off + base + 2 + j].to_int()
           out[b * 32 + j] = Float::from_int((byte & 0xF) - 8) * d
           out[b * 32 + 16 + j] = Float::from_int((byte >> 4) - 8) * d
         }
@@ -191,28 +186,28 @@ fn decode_row_into(
     8 => {
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 34
-        let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
+        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base).to_int())
         for j = 0; j < 32; j = j + 1 {
-          out[b * 32 + j] = Float::from_int(bv_sbyte(row, base + 2 + j)) * d
+          out[b * 32 + j] = Float::from_int(bv_sbyte(data, row_off + base + 2 + j)) * d
         }
       }
     }
     12 => {
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 144
-        let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
-        let dmin = @tensor.half_to_float(row.unsafe_read_uint16_le(base + 2).to_int())
+        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base).to_int())
+        let dmin = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base + 2).to_int())
         let sc_base = base + 4
         let q_base = base + 16
         for g = 0; g < 4; g = g + 1 {
-          let (sc0, m0) = bv_scale_min_k4(g * 2, row, sc_base)
-          let (sc1, m1) = bv_scale_min_k4(g * 2 + 1, row, sc_base)
+          let (sc0, m0) = bv_scale_min_k4(g * 2, data, row_off + sc_base)
+          let (sc1, m1) = bv_scale_min_k4(g * 2 + 1, data, row_off + sc_base)
           let d0 = d * Float::from_int(sc0)
           let min0 = dmin * Float::from_int(m0)
           let d1 = d * Float::from_int(sc1)
           let min1 = dmin * Float::from_int(m1)
           for l = 0; l < 32; l = l + 1 {
-            let byte = row[q_base + g * 32 + l].to_int()
+            let byte = data[row_off + q_base + g * 32 + l].to_int()
             out[b * 256 + g * 64 + l] = d0 * Float::from_int(byte & 0xF) - min0
             out[b * 256 + g * 64 + 32 + l] = d1 * Float::from_int(byte >> 4) - min1
           }
@@ -222,28 +217,28 @@ fn decode_row_into(
     14 => {
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 210
-        let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base + 208).to_int())
+        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base + 208).to_int())
         for half = 0; half < 2; half = half + 1 {
           let ql = base + half * 64
           let qh = base + 128 + half * 32
           let sc = base + 192 + half * 8
           for l = 0; l < 32; l = l + 1 {
             let si = l / 16
-            let qhv = row[qh + l].to_int()
-            let ql_lo = row[ql + l].to_int()
-            let ql_hi = row[ql + 32 + l].to_int()
+            let qhv = data[row_off + qh + l].to_int()
+            let ql_lo = data[row_off + ql + l].to_int()
+            let ql_hi = data[row_off + ql + 32 + l].to_int()
             let y = b * 256 + half * 128
             out[y + l] = d *
-              Float::from_int(bv_sbyte(row, sc + si)) *
+              Float::from_int(bv_sbyte(data, row_off + sc + si)) *
               Float::from_int(((ql_lo & 0xF) | ((qhv & 3) << 4)) - 32)
             out[y + l + 32] = d *
-              Float::from_int(bv_sbyte(row, sc + si + 2)) *
+              Float::from_int(bv_sbyte(data, row_off + sc + si + 2)) *
               Float::from_int(((ql_hi & 0xF) | (((qhv >> 2) & 3) << 4)) - 32)
             out[y + l + 64] = d *
-              Float::from_int(bv_sbyte(row, sc + si + 4)) *
+              Float::from_int(bv_sbyte(data, row_off + sc + si + 4)) *
               Float::from_int(((ql_lo >> 4) | (((qhv >> 4) & 3) << 4)) - 32)
             out[y + l + 96] = d *
-              Float::from_int(bv_sbyte(row, sc + si + 6)) *
+              Float::from_int(bv_sbyte(data, row_off + sc + si + 6)) *
               Float::from_int(((ql_hi >> 4) | (((qhv >> 6) & 3) << 4)) - 32)
           }
         }
@@ -267,12 +262,44 @@ pub fn Matrix::matvec(
   let cols = self.cols
   let bs = self.ty.block_size
   let n_blocks = cols / bs
-  for r = 0; r < n_rows; r = r + 1 {
-    let row_start = self.data.view(
-      start=r * self.row_bytes,
-      end=(r + 1) * self.row_bytes,
-    )
-    y[r] = dot_row(self.ty, row_start, x, 0, n_blocks, bs)
+  let data = self.data
+  let rb = self.row_bytes
+  let ty = self.ty
+  // Each row is addressed by offset into the whole payload rather than by
+  // slicing out a view: the LM head has 49152 rows, and constructing a view per
+  // row costs more than the arithmetic in it.
+  match ty.id {
+    0 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        y[r] = dot_f32(data, r * rb, x, 0, n_blocks)
+      }
+    }
+    1 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        y[r] = dot_f16(data, r * rb, x, 0, n_blocks)
+      }
+    }
+    2 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        y[r] = dot_q4_0(data, r * rb, x, 0, n_blocks)
+      }
+    }
+    8 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        y[r] = dot_q8_0(data, r * rb, x, 0, n_blocks)
+      }
+    }
+    12 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        y[r] = dot_q4_K(data, r * rb, x, 0, n_blocks)
+      }
+    }
+    14 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        y[r] = dot_q6_K(data, r * rb, x, 0, n_blocks)
+      }
+    }
+    _ => ()
   }
 }
 
@@ -293,11 +320,15 @@ pub fn Matrix::matvec_at(
   let bs = self.ty.block_size
   let n_blocks = cols / bs
   for r = 0; r < n_rows; r = r + 1 {
-    let row_start = self.data.view(
-      start=r * self.row_bytes,
-      end=(r + 1) * self.row_bytes,
+    y[y_off + r] = dot_row(
+      self.ty,
+      self.data,
+      r * self.row_bytes,
+      x,
+      x_off,
+      n_blocks,
+      bs,
     )
-    y[y_off + r] = dot_row(self.ty, row_start, x, x_off, n_blocks, bs)
   }
 }
 
@@ -308,7 +339,8 @@ pub fn Matrix::matvec_at(
 /// compiles as straight-line code with no per-element type test.
 fn dot_row(
   ty : @tensor.GgmlType,
-  row : BytesView,
+  data : Bytes,
+  row_off : Int,
   x : FixedArray[Float],
   x_off : Int,
   n_blocks : Int,
@@ -316,27 +348,41 @@ fn dot_row(
 ) -> Float {
   ignore(bs)
   match ty.id {
-    0 => dot_f32(row, x, x_off, n_blocks)
-    1 => dot_f16(row, x, x_off, n_blocks)
-    2 => dot_q4_0(row, x, x_off, n_blocks)
-    8 => dot_q8_0(row, x, x_off, n_blocks)
-    12 => dot_q4_K(row, x, x_off, n_blocks)
-    14 => dot_q6_K(row, x, x_off, n_blocks)
+    0 => dot_f32(data, row_off, x, x_off, n_blocks)
+    1 => dot_f16(data, row_off, x, x_off, n_blocks)
+    2 => dot_q4_0(data, row_off, x, x_off, n_blocks)
+    8 => dot_q8_0(data, row_off, x, x_off, n_blocks)
+    12 => dot_q4_K(data, row_off, x, x_off, n_blocks)
+    14 => dot_q6_K(data, row_off, x, x_off, n_blocks)
     _ => 0.0
   }
 }
 
 ///|
+/// byte value -> signed int8 value, so the inner loops need no branch.
+///
+/// Sign-extending a byte costs a compare and a select per element, which in the
+/// LM head is 28M extra ops per token; a table lookup replaces it with a load.
+let sbyte_table : Array[Int] = {
+  let t : Array[Int] = Array::make(256, 0)
+  for i = 0; i < 256; i = i + 1 {
+    t[i] = if i >= 128 { i - 256 } else { i }
+  }
+  t
+}
+
+///|
 /// f32 weights: a plain float dot product.
 fn dot_f32(
-  row : BytesView,
+  data : Bytes,
+  row_off : Int,
   x : FixedArray[Float],
   x_off : Int,
   n_blocks : Int,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
-    let w = Float::reinterpret_from_uint(row.unsafe_read_uint32_le(b * 4))
+    let w = Float::reinterpret_from_uint(data.unsafe_read_uint32_le(row_off + b * 4))
     acc = acc + w * x[x_off + b]
   }
   acc
@@ -345,14 +391,15 @@ fn dot_f32(
 ///|
 /// f16 weights: decode each half then multiply.
 fn dot_f16(
-  row : BytesView,
+  data : Bytes,
+  row_off : Int,
   x : FixedArray[Float],
   x_off : Int,
   n_blocks : Int,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
-    let w = @tensor.half_to_float(row.unsafe_read_uint16_le(b * 2).to_int())
+    let w = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + b * 2).to_int())
     acc = acc + w * x[x_off + b]
   }
   acc
@@ -365,23 +412,27 @@ fn dot_f16(
 /// reference: summing integers first and scaling once is both faster and
 /// closer to the reference arithmetic than scaling per element.
 fn dot_q4_0(
-  row : BytesView,
+  data : Bytes,
+  row_off : Int,
   x : FixedArray[Float],
   x_off : Int,
   n_blocks : Int,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
-    let base = b * 18
-    let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
-    let mut isum : Float = 0.0
+    let base = row_off + b * 18
+    let d = @tensor.half_to_float(data.unsafe_read_uint16_le(base).to_int())
+    let xb = x_off + b * 32
+    // Two partial sums: the low nibbles feed one, the high nibbles the other, so
+    // the two dependency chains interleave.
+    let mut sl : Float = 0.0
+    let mut sh : Float = 0.0
     for j = 0; j < 16; j = j + 1 {
-      let byte = row[base + 2 + j].to_int()
-      isum = isum +
-        Float::from_int((byte & 0xF) - 8) * x[x_off + b * 32 + j] +
-        Float::from_int((byte >> 4) - 8) * x[x_off + b * 32 + 16 + j]
+      let byte = data[base + 2 + j].to_int()
+      sl = sl + Float::from_int((byte & 0xF) - 8) * x[xb + j]
+      sh = sh + Float::from_int((byte >> 4) - 8) * x[xb + 16 + j]
     }
-    acc = acc + d * isum
+    acc = acc + d * (sl + sh)
   }
   acc
 }
@@ -389,22 +440,34 @@ fn dot_q4_0(
 ///|
 /// q8_0: fp16 scale + 32 signed bytes.
 fn dot_q8_0(
-  row : BytesView,
+  data : Bytes,
+  row_off : Int,
   x : FixedArray[Float],
   x_off : Int,
   n_blocks : Int,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
-    let base = b * 34
-    let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
-    let mut isum : Float = 0.0
-    for j = 0; j < 32; j = j + 1 {
-      isum = isum +
-        Float::from_int(bv_sbyte(row, base + 2 + j)) *
-        x[x_off + b * 32 + j]
+    let base = row_off + b * 34
+    let d = @tensor.half_to_float(data.unsafe_read_uint16_le(base).to_int())
+    let xb = x_off + b * 32
+    // Unrolled by 4: the accumulator chain is what limits this loop, so four
+    // partial sums give the pipeline independent work to overlap.
+    let mut s0 : Float = 0.0
+    let mut s1 : Float = 0.0
+    let mut s2 : Float = 0.0
+    let mut s3 : Float = 0.0
+    for j = 0; j < 32; j = j + 4 {
+      s0 = s0 +
+        Float::from_int(sbyte_table[data[base + 2 + j].to_int()]) * x[xb + j]
+      s1 = s1 +
+        Float::from_int(sbyte_table[data[base + 3 + j].to_int()]) * x[xb + j + 1]
+      s2 = s2 +
+        Float::from_int(sbyte_table[data[base + 4 + j].to_int()]) * x[xb + j + 2]
+      s3 = s3 +
+        Float::from_int(sbyte_table[data[base + 5 + j].to_int()]) * x[xb + j + 3]
     }
-    acc = acc + d * isum
+    acc = acc + d * ((s0 + s1) + (s2 + s3))
   }
   acc
 }
@@ -415,22 +478,25 @@ fn dot_q8_0(
 /// `value = d*sc*q - dmin*m`, so the min term is a constant times the sum of
 /// that sub-block's inputs: computing the sum once avoids a per-element add.
 fn dot_q4_K(
-  row : BytesView,
+  data : Bytes,
+  row_off : Int,
   x : FixedArray[Float],
   x_off : Int,
   n_blocks : Int,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
-    let base = b * 144
-    let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
-    let dmin = @tensor.half_to_float(row.unsafe_read_uint16_le(base + 2).to_int())
+    let base = row_off + b * 144
+    let d = @tensor.half_to_float(data.unsafe_read_uint16_le(base).to_int())
+    let dmin = @tensor.half_to_float(
+      data.unsafe_read_uint16_le(base + 2).to_int(),
+    )
     let sc_base = base + 4
     let q_base = base + 16
     let y0 = x_off + b * 256
     for g = 0; g < 4; g = g + 1 {
-      let (sc0, m0) = bv_scale_min_k4(g * 2, row, sc_base)
-      let (sc1, m1) = bv_scale_min_k4(g * 2 + 1, row, sc_base)
+      let (sc0, m0) = bv_scale_min_k4(g * 2, data, sc_base)
+      let (sc1, m1) = bv_scale_min_k4(g * 2 + 1, data, sc_base)
       let d0 = d * Float::from_int(sc0)
       let min0 = dmin * Float::from_int(m0)
       let d1 = d * Float::from_int(sc1)
@@ -439,14 +505,16 @@ fn dot_q4_K(
       let mut sum1 : Float = 0.0
       let mut xsum0 : Float = 0.0
       let mut xsum1 : Float = 0.0
+      let qb = q_base + g * 32
+      let yb = y0 + g * 64
       for l = 0; l < 32; l = l + 1 {
-        let byte = row[q_base + g * 32 + l].to_int()
-        let xa = x[y0 + g * 64 + l]
-        let xb = x[y0 + g * 64 + 32 + l]
+        let byte = data[qb + l].to_int()
+        let xa = x[yb + l]
+        let xbv = x[yb + 32 + l]
         sum0 = sum0 + Float::from_int(byte & 0xF) * xa
-        sum1 = sum1 + Float::from_int(byte >> 4) * xb
+        sum1 = sum1 + Float::from_int(byte >> 4) * xbv
         xsum0 = xsum0 + xa
-        xsum1 = xsum1 + xb
+        xsum1 = xsum1 + xbv
       }
       acc = acc + d0 * sum0 - min0 * xsum0 + d1 * sum1 - min1 * xsum1
     }
@@ -457,60 +525,61 @@ fn dot_q4_K(
 ///|
 /// q6_K: 256-element super-blocks, 16-element sub-block int8 scales.
 fn dot_q6_K(
-  row : BytesView,
+  data : Bytes,
+  row_off : Int,
   x : FixedArray[Float],
   x_off : Int,
   n_blocks : Int,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
-    let base = b * 210
-    let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base + 208).to_int())
+    let base = row_off + b * 210
+    let d = @tensor.half_to_float(data.unsafe_read_uint16_le(base + 208).to_int())
     let y0 = x_off + b * 256
     for half = 0; half < 2; half = half + 1 {
       let ql = base + half * 64
       let qh = base + 128 + half * 32
       let sc = base + 192 + half * 8
+      let yb = y0 + half * 128
+      // One partial sum per element lane; the scales are gathered once per
+      // 16-element group instead of per element.
+      let mut s0 : Float = 0.0
+      let mut s1 : Float = 0.0
+      let mut s2 : Float = 0.0
+      let mut s3 : Float = 0.0
+      let mut prev_si = -1
+      let mut a0 : Float = 0.0
+      let mut a1 : Float = 0.0
+      let mut a2 : Float = 0.0
+      let mut a3 : Float = 0.0
       for l = 0; l < 32; l = l + 1 {
         let si = l / 16
-        let qhv = row[qh + l].to_int()
-        let ql_lo = row[ql + l].to_int()
-        let ql_hi = row[ql + 32 + l].to_int()
-        let s0 = bv_sbyte(row, sc + si)
-        let s1 = bv_sbyte(row, sc + si + 2)
-        let s2 = bv_sbyte(row, sc + si + 4)
-        let s3 = bv_sbyte(row, sc + si + 6)
-        // A zero sub-block scale zeroes its whole contribution; skipping the
-        // multiply keeps that case free instead of paying for it.
-        if s0 != 0 {
-          acc = acc +
-            d *
-            Float::from_int(s0) *
-            Float::from_int(((ql_lo & 0xF) | ((qhv & 3) << 4)) - 32) *
-            x[y0 + half * 128 + l]
+        if si != prev_si {
+          a0 = Float::from_int(sbyte_table[data[sc + si].to_int()])
+          a1 = Float::from_int(sbyte_table[data[sc + si + 2].to_int()])
+          a2 = Float::from_int(sbyte_table[data[sc + si + 4].to_int()])
+          a3 = Float::from_int(sbyte_table[data[sc + si + 6].to_int()])
+          prev_si = si
         }
-        if s1 != 0 {
-          acc = acc +
-            d *
-            Float::from_int(s1) *
-            Float::from_int(((ql_hi & 0xF) | (((qhv >> 2) & 3) << 4)) - 32) *
-            x[y0 + half * 128 + l + 32]
-        }
-        if s2 != 0 {
-          acc = acc +
-            d *
-            Float::from_int(s2) *
-            Float::from_int(((ql_lo >> 4) | (((qhv >> 4) & 3) << 4)) - 32) *
-            x[y0 + half * 128 + l + 64]
-        }
-        if s3 != 0 {
-          acc = acc +
-            d *
-            Float::from_int(s3) *
-            Float::from_int(((ql_hi >> 4) | (((qhv >> 6) & 3) << 4)) - 32) *
-            x[y0 + half * 128 + l + 96]
-        }
+        let qhv = data[qh + l].to_int()
+        let ql_lo = data[ql + l].to_int()
+        let ql_hi = data[ql + 32 + l].to_int()
+        s0 = s0 + a0 * Float::from_int(((ql_lo & 0xF) | ((qhv & 3) << 4)) - 32) *
+          x[yb + l]
+        s1 = s1 +
+          a1 *
+          Float::from_int(((ql_hi & 0xF) | (((qhv >> 2) & 3) << 4)) - 32) *
+          x[yb + l + 32]
+        s2 = s2 +
+          a2 *
+          Float::from_int(((ql_lo >> 4) | (((qhv >> 4) & 3) << 4)) - 32) *
+          x[yb + l + 64]
+        s3 = s3 +
+          a3 *
+          Float::from_int(((ql_hi >> 4) | (((qhv >> 6) & 3) << 4)) - 32) *
+          x[yb + l + 96]
       }
+      acc = acc + d * ((s0 + s1) + (s2 + s3))
     }
   }
   acc

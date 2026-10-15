@@ -50,6 +50,11 @@ pub(all) suberror TokenizerError {
 } derive(Eq, Debug)
 
 ///|
+pub fn TokenizerError::message(self : TokenizerError) -> String {
+  tk_err_string(self)
+}
+
+///|
 fn tk_err_string(e : TokenizerError) -> String {
   match e {
     UnsupportedModel(model~) => "unsupported tokenizer.ggml.model \"\{model}\" (this build implements gpt2)"
