@@ -359,6 +359,17 @@ fn dot_row(
 }
 
 ///|
+/// Unchecked fixed-array read, for the matvec inner loops only.
+///
+/// Every index in those loops is bounded by the matrix geometry, which the
+/// loader has already validated, so the bounds check is pure overhead: it costs
+/// one compare and branch per element over tens of millions of elements per
+/// token. Declared here rather than taken from core because core's version is
+/// not exported.
+#intrinsic("%fixedarray.unsafe_get")
+fn[T] uget(a : FixedArray[T], i : Int) -> T = "%fixedarray.unsafe_get"
+
+///|
 /// byte value -> signed int8 value, so the inner loops need no branch.
 ///
 /// Sign-extending a byte costs a compare and a select per element, which in the
@@ -394,7 +405,7 @@ fn dot_f32(
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
     let w = Float::reinterpret_from_uint(data.unsafe_read_uint32_le(row_off + b * 4))
-    acc = acc + w * x[x_off + b]
+    acc = acc + w * uget(x, x_off + b)
   }
   acc
 }
@@ -411,7 +422,7 @@ fn dot_f16(
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
     let w = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + b * 2).to_int())
-    acc = acc + w * x[x_off + b]
+    acc = acc + w * uget(x, x_off + b)
   }
   acc
 }
@@ -440,8 +451,8 @@ fn dot_q4_0(
     let mut sh : Float = 0.0
     for j = 0; j < 16; j = j + 1 {
       let byte = data[base + 2 + j].to_int()
-      sl = sl + Float::from_int((byte & 0xF) - 8) * x[xb + j]
-      sh = sh + Float::from_int((byte >> 4) - 8) * x[xb + 16 + j]
+      sl = sl + Float::from_int((byte & 0xF) - 8) * uget(x, xb + j)
+      sh = sh + Float::from_int((byte >> 4) - 8) * uget(x, xb + 16 + j)
     }
     acc = acc + d * (sl + sh)
   }
@@ -469,10 +480,13 @@ fn dot_q8_0(
     let mut s2 : Float = 0.0
     let mut s3 : Float = 0.0
     for j = 0; j < 32; j = j + 4 {
-      s0 = s0 + sbyte_float_table[data[base + 2 + j].to_int()] * x[xb + j]
-      s1 = s1 + sbyte_float_table[data[base + 3 + j].to_int()] * x[xb + j + 1]
-      s2 = s2 + sbyte_float_table[data[base + 4 + j].to_int()] * x[xb + j + 2]
-      s3 = s3 + sbyte_float_table[data[base + 5 + j].to_int()] * x[xb + j + 3]
+      s0 = s0 + sbyte_float_table[data[base + 2 + j].to_int()] * uget(x, xb + j)
+      s1 = s1 +
+        sbyte_float_table[data[base + 3 + j].to_int()] * uget(x, xb + j + 1)
+      s2 = s2 +
+        sbyte_float_table[data[base + 4 + j].to_int()] * uget(x, xb + j + 2)
+      s3 = s3 +
+        sbyte_float_table[data[base + 5 + j].to_int()] * uget(x, xb + j + 3)
     }
     acc = acc + d * ((s0 + s1) + (s2 + s3))
   }
@@ -516,8 +530,8 @@ fn dot_q4_K(
       let yb = y0 + g * 64
       for l = 0; l < 32; l = l + 1 {
         let byte = data[qb + l].to_int()
-        let xa = x[yb + l]
-        let xbv = x[yb + 32 + l]
+        let xa = uget(x, yb + l)
+        let xbv = uget(x, yb + 32 + l)
         sum0 = sum0 + Float::from_int(byte & 0xF) * xa
         sum1 = sum1 + Float::from_int(byte >> 4) * xbv
         xsum0 = xsum0 + xa
@@ -572,19 +586,19 @@ fn dot_q6_K(
         let ql_lo = data[ql + l].to_int()
         let ql_hi = data[ql + 32 + l].to_int()
         s0 = s0 + a0 * Float::from_int(((ql_lo & 0xF) | ((qhv & 3) << 4)) - 32) *
-          x[yb + l]
+          uget(x, yb + l)
         s1 = s1 +
           a1 *
           Float::from_int(((ql_hi & 0xF) | (((qhv >> 2) & 3) << 4)) - 32) *
-          x[yb + l + 32]
+          uget(x, yb + l + 32)
         s2 = s2 +
           a2 *
           Float::from_int(((ql_lo >> 4) | (((qhv >> 4) & 3) << 4)) - 32) *
-          x[yb + l + 64]
+          uget(x, yb + l + 64)
         s3 = s3 +
           a3 *
           Float::from_int(((ql_hi >> 4) | (((qhv >> 6) & 3) << 4)) - 32) *
-          x[yb + l + 96]
+          uget(x, yb + l + 96)
       }
       acc = acc + d * ((s0 + s1) + (s2 + s3))
     }

@@ -19,7 +19,12 @@ import {
   "soehi/moonlm/tokenizer",
 }
 
+
 pkgtype(kind: "executable")
+
+// The wasm entry point only exercises gguf and tensor in memory, so the rest of
+// the imports are unused there; imports cannot be scoped per target.
+warnings = "-unused_package"
 
 options(
   "native-stub": [ "stubs.c" ],
