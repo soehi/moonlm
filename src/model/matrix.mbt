@@ -128,6 +128,132 @@ pub fn load_matrix(
 }
 
 ///|
+/// Dequantize one row into `out`, which must hold `self.cols` floats.
+///
+/// Used for the token embedding, where one row is needed per token instead of a
+/// full matrix product.
+pub fn Matrix::dequant_row(
+  self : Matrix,
+  row : Int,
+  out : FixedArray[Float],
+) -> Result[Unit, ModelError] {
+  if row < 0 || row >= self.rows {
+    return Err(BadValue(key=self.name, detail="row \{row} out of range"))
+  }
+  let row_start = self.data.view(
+    start=row * self.row_bytes,
+    end=(row + 1) * self.row_bytes,
+  )
+  let bs = self.ty.block_size
+  let n_blocks = self.cols / bs
+  match self.ty.id {
+    0 | 1 | 2 | 8 | 12 | 14 => {
+      // Reuse the dot kernels' block readers by scattering through a one-hot
+      // vector is wasteful; decode blocks directly instead.
+      decode_row_into(self.ty, row_start, out, n_blocks)
+      Ok(())
+    }
+    _ =>
+      Err(UnsupportedTensorType(name=self.name, type_name=self.ty.name))
+  }
+}
+
+///|
+/// Decode every block of a row into consecutive output slots.
+fn decode_row_into(
+  ty : @tensor.GgmlType,
+  row : BytesView,
+  out : FixedArray[Float],
+  n_blocks : Int,
+) -> Unit {
+  match ty.id {
+    0 => {
+      for b = 0; b < n_blocks; b = b + 1 {
+        out[b] = Float::reinterpret_from_uint(row.unsafe_read_uint32_le(b * 4))
+      }
+    }
+    1 => {
+      for b = 0; b < n_blocks; b = b + 1 {
+        out[b] = @tensor.half_to_float(row.unsafe_read_uint16_le(b * 2).to_int())
+      }
+    }
+    2 => {
+      for b = 0; b < n_blocks; b = b + 1 {
+        let base = b * 18
+        let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
+        for j = 0; j < 16; j = j + 1 {
+          let byte = row[base + 2 + j].to_int()
+          out[b * 32 + j] = Float::from_int((byte & 0xF) - 8) * d
+          out[b * 32 + 16 + j] = Float::from_int((byte >> 4) - 8) * d
+        }
+      }
+    }
+    8 => {
+      for b = 0; b < n_blocks; b = b + 1 {
+        let base = b * 34
+        let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
+        for j = 0; j < 32; j = j + 1 {
+          out[b * 32 + j] = Float::from_int(bv_sbyte(row, base + 2 + j)) * d
+        }
+      }
+    }
+    12 => {
+      for b = 0; b < n_blocks; b = b + 1 {
+        let base = b * 144
+        let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base).to_int())
+        let dmin = @tensor.half_to_float(row.unsafe_read_uint16_le(base + 2).to_int())
+        let sc_base = base + 4
+        let q_base = base + 16
+        for g = 0; g < 4; g = g + 1 {
+          let (sc0, m0) = bv_scale_min_k4(g * 2, row, sc_base)
+          let (sc1, m1) = bv_scale_min_k4(g * 2 + 1, row, sc_base)
+          let d0 = d * Float::from_int(sc0)
+          let min0 = dmin * Float::from_int(m0)
+          let d1 = d * Float::from_int(sc1)
+          let min1 = dmin * Float::from_int(m1)
+          for l = 0; l < 32; l = l + 1 {
+            let byte = row[q_base + g * 32 + l].to_int()
+            out[b * 256 + g * 64 + l] = d0 * Float::from_int(byte & 0xF) - min0
+            out[b * 256 + g * 64 + 32 + l] = d1 * Float::from_int(byte >> 4) - min1
+          }
+        }
+      }
+    }
+    14 => {
+      for b = 0; b < n_blocks; b = b + 1 {
+        let base = b * 210
+        let d = @tensor.half_to_float(row.unsafe_read_uint16_le(base + 208).to_int())
+        for half = 0; half < 2; half = half + 1 {
+          let ql = base + half * 64
+          let qh = base + 128 + half * 32
+          let sc = base + 192 + half * 8
+          for l = 0; l < 32; l = l + 1 {
+            let si = l / 16
+            let qhv = row[qh + l].to_int()
+            let ql_lo = row[ql + l].to_int()
+            let ql_hi = row[ql + 32 + l].to_int()
+            let y = b * 256 + half * 128
+            out[y + l] = d *
+              Float::from_int(bv_sbyte(row, sc + si)) *
+              Float::from_int(((ql_lo & 0xF) | ((qhv & 3) << 4)) - 32)
+            out[y + l + 32] = d *
+              Float::from_int(bv_sbyte(row, sc + si + 2)) *
+              Float::from_int(((ql_hi & 0xF) | (((qhv >> 2) & 3) << 4)) - 32)
+            out[y + l + 64] = d *
+              Float::from_int(bv_sbyte(row, sc + si + 4)) *
+              Float::from_int(((ql_lo >> 4) | (((qhv >> 4) & 3) << 4)) - 32)
+            out[y + l + 96] = d *
+              Float::from_int(bv_sbyte(row, sc + si + 6)) *
+              Float::from_int(((ql_hi >> 4) | (((qhv >> 6) & 3) << 4)) - 32)
+          }
+        }
+      }
+    }
+    _ => ()
+  }
+}
+
+///|
 /// `y = x @ W^T` for `W = self` (rows x cols), `x` holding `cols` floats.
 ///
 /// Each output element is one dot product over one quantized row, with

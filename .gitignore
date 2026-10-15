@@ -5,3 +5,4 @@ target/
 *.gguf
 __pycache__/
 *.pyc
+test_model.gguf
