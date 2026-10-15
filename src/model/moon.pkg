@@ -1,0 +1,10 @@
+// Transformer forward pass: RMSNorm, RoPE, GQA attention, SwiGLU FFN, KV cache.
+//
+// Pure MoonBit, no FFI, no third-party dependencies. Must build and test on
+// both `native` and `wasm-gc`.
+
+import {
+  "moonbitlang/core/math",
+  "soehi/moonlm/gguf",
+  "soehi/moonlm/tensor",
+}

@@ -160,6 +160,17 @@ pub fn GgufFile::tensor(self : GgufFile, name : String) -> TensorInfo? {
 }
 
 ///|
+/// Find a tensor directory entry by name, returning its index.
+pub fn GgufFile::index_of_tensor(self : GgufFile, name : String) -> Int? {
+  for i, t in self.tensors {
+    if t.name == name {
+      return Some(i)
+    }
+  }
+  None
+}
+
+///|
 /// The raw payload bytes of tensor `index`, spanning `nbytes` from the data
 /// section.
 pub fn GgufFile::tensor_bytes(

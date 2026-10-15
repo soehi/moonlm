@@ -372,17 +372,6 @@ fn run_dequant(args : Array[String]) -> Int {
 }
 
 ///|
-/// Find a tensor by name, returning its directory index.
-fn @gguf.GgufFile::index_of_tensor(self : @gguf.GgufFile, name : String) -> Int? {
-  for i, t in self.tensors {
-    if t.name == name {
-      return Some(i)
-    }
-  }
-  None
-}
-
-///|
 /// Run the CLI and return the process exit status.
 fn run(args : Array[String]) -> Int {
   if args.length() <= 1 {
