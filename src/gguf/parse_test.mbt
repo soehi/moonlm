@@ -422,3 +422,30 @@ test "single-byte corruption anywhere in the file never crashes" {
     }
   }
 }
+
+///|
+test "parse_materializing_metadata keeps the full long array" {
+  let f = @gguf.parse_materializing_metadata(synthetic_gguf).unwrap()
+  match f.get("test.array.long") {
+    Some(@gguf.Array(@gguf.Materialized(elems))) => {
+      assert_eq(elems.length(), long_array_count)
+      assert_eq(elems[0], @gguf.Str("tok0"))
+      assert_eq(elems[long_array_count - 1], @gguf.Str("tok2047"))
+    }
+    Some(v) => fail("expected a fully materialized array, got \{v.to_text()}")
+    None => fail("test.array.long is missing")
+  }
+  // Everything else behaves the same as the default parse.
+  assert_eq(f.tensor_count(), synthetic_tensor_names.length())
+  assert_eq(f.get_string("general.architecture"), Some("llama"))
+}
+
+///|
+test "default parse still summarizes the long array" {
+  let f = @gguf.parse(synthetic_gguf).unwrap()
+  match f.get("test.array.long") {
+    Some(@gguf.Array(@gguf.Summarized(_))) => ()
+    Some(v) => fail("expected a summarized array, got \{v.to_text()}")
+    None => fail("test.array.long is missing")
+  }
+}

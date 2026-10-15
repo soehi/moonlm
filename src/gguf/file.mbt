@@ -227,9 +227,15 @@ fn product_dims(dims : Array[UInt64]) -> Int64? {
 
 ///|
 /// Read `count` metadata key-value pairs.
+///
+/// `materialize~` forwards to array-valued entries: when true, arrays beyond
+/// the usual summarize threshold are decoded in full. `parse` keeps the default
+/// (summarize) so a plain `inspect` stays cheap; `parse_materializing_metadata`
+/// opts in for callers that consume whole arrays, like the tokenizer.
 fn read_metadata(
   c : ByteCursor,
   count : UInt64,
+  materialize~ : Bool = false,
 ) -> Result[Array[(String, MetaValue)], GgufError] {
   let out : Array[(String, MetaValue)] = []
   // Each pair needs at least a 8-byte key length, a 4-byte type and 1 value byte.
@@ -247,7 +253,7 @@ fn read_metadata(
       Ok(t) => t
       Err(e) => return Err(e)
     }
-    let value = match read_meta_value(c, type_id) {
+    let value = match read_meta_value(c, type_id, materialize~) {
       Ok(v) => v
       Err(e) => return Err(e)
     }
@@ -337,7 +343,28 @@ fn align_up(pos : Int64, alignment : UInt) -> Int64 {
 /// ids, counts that overflow, tensor payloads outside the buffer — produces a
 /// `GgufError` carrying the file offset, and no input can cause a panic or an
 /// out-of-bounds read.
+///
+/// Array-valued metadata beyond the summarize threshold is folded into a
+/// bounded summary; use `parse_materializing_metadata` to keep the full arrays.
 pub fn parse(buf : Bytes) -> Result[GgufFile, GgufError] {
+  parse_with(buf, materialize=false)
+}
+
+///|
+/// Like `parse`, but materializes every array-valued metadata entry in full.
+///
+/// The tokenizer needs the complete `tokenizer.ggml.tokens` and
+/// `tokenizer.ggml.merges` arrays (about 100k strings for SmolLM2), which the
+/// default summary would truncate. Everything else — validation, tensor
+/// directory, data section — behaves identically.
+pub fn parse_materializing_metadata(
+  buf : Bytes,
+) -> Result[GgufFile, GgufError] {
+  parse_with(buf, materialize=true)
+}
+
+///|
+fn parse_with(buf : Bytes, materialize~ : Bool) -> Result[GgufFile, GgufError] {
   let c = ByteCursor::new(buf)
   let magic = match c.read_u32() {
     Ok(m) => m
@@ -364,7 +391,7 @@ pub fn parse(buf : Bytes) -> Result[GgufFile, GgufError] {
     Ok(n) => n
     Err(e) => return Err(e)
   }
-  let metadata = match read_metadata(c, kv_count) {
+  let metadata = match read_metadata(c, kv_count, materialize~) {
     Ok(m) => m
     Err(e) => return Err(e)
   }

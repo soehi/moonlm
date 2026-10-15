@@ -144,13 +144,14 @@ fn read_scalar_value(
 /// tracked and bounded. Element counts are validated against the bytes that
 /// could possibly remain before any element is decoded.
 ///
-/// When the count exceeds `array_materialize_limit` and the element type is
-/// scalar, only the first `array_prefix_len` elements are decoded and the rest
-/// of the bytes are skipped — that is what keeps a 50k-entry token list from
-/// allocating.
+/// By default arrays beyond `array_materialize_limit` are summarized (element
+/// type, count, bounded prefix) to keep `inspect` cheap on vocab-sized lists.
+/// Callers that need the full contents — the tokenizer loads the whole
+/// `tokens`/`merges` arrays — set `materialize~ = true` to force full decoding.
 fn read_array_value(
   c : ByteCursor,
   nesting : Int,
+  materialize~ : Bool = false,
 ) -> Result[MetaValue, GgufError] {
   if nesting > 8 {
     return Err(ArrayNestingTooDeep(offset=c.pos, depth=nesting))
@@ -171,7 +172,7 @@ fn read_array_value(
     return Err(CountTooLarge(offset=start, count=count))
   }
   let too_long = count.to_int() > array_materialize_limit
-  if !too_long || elem_type == 9U {
+  if !too_long || materialize || elem_type == 9U {
     // Materialize: decode every element.
     let elems : Array[MetaValue] = []
     let mut i = 0
@@ -248,9 +249,10 @@ fn skip_array_elements(
 pub fn read_meta_value(
   c : ByteCursor,
   type_id : UInt,
+  materialize~ : Bool = false,
 ) -> Result[MetaValue, GgufError] {
   if type_id == 9U {
-    read_array_value(c, 0)
+    read_array_value(c, 0, materialize~)
   } else {
     read_scalar_value(c, type_id)
   }
