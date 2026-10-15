@@ -492,8 +492,8 @@ pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, Mode
     }
     // 8. Pre-FFN RMSNorm and SwiGLU.
     rms_norm(sc.hidden, lw.ffn_norm.data, sc.normed, n_embd, cfg.rms_eps)
-    lw.w_gate.matvec(sc.normed, sc.gate)
-    lw.w_up.matvec(sc.normed, sc.up)
+    // Gate and up share their input, so one fused pass computes both.
+    matvec_pair(lw.w_gate, lw.w_up, sc.normed, sc.gate, sc.up)
     for i = 0; i < cfg.n_ff; i = i + 1 {
       sc.gate[i] = silu(sc.gate[i]) * sc.up[i]
     }

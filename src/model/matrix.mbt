@@ -372,6 +372,17 @@ let sbyte_table : Array[Int] = {
 }
 
 ///|
+/// byte value -> signed int8 value as a `Float`, so the q8_0 inner loop needs
+/// neither a branch nor an integer-to-float conversion per weight.
+let sbyte_float_table : Array[Float] = {
+  let t : Array[Float] = Array::make(256, 0.0)
+  for i = 0; i < 256; i = i + 1 {
+    t[i] = Float::from_int(if i >= 128 { i - 256 } else { i })
+  }
+  t
+}
+
+///|
 /// f32 weights: a plain float dot product.
 fn dot_f32(
   data : Bytes,
@@ -458,14 +469,10 @@ fn dot_q8_0(
     let mut s2 : Float = 0.0
     let mut s3 : Float = 0.0
     for j = 0; j < 32; j = j + 4 {
-      s0 = s0 +
-        Float::from_int(sbyte_table[data[base + 2 + j].to_int()]) * x[xb + j]
-      s1 = s1 +
-        Float::from_int(sbyte_table[data[base + 3 + j].to_int()]) * x[xb + j + 1]
-      s2 = s2 +
-        Float::from_int(sbyte_table[data[base + 4 + j].to_int()]) * x[xb + j + 2]
-      s3 = s3 +
-        Float::from_int(sbyte_table[data[base + 5 + j].to_int()]) * x[xb + j + 3]
+      s0 = s0 + sbyte_float_table[data[base + 2 + j].to_int()] * x[xb + j]
+      s1 = s1 + sbyte_float_table[data[base + 3 + j].to_int()] * x[xb + j + 1]
+      s2 = s2 + sbyte_float_table[data[base + 4 + j].to_int()] * x[xb + j + 2]
+      s3 = s3 + sbyte_float_table[data[base + 5 + j].to_int()] * x[xb + j + 3]
     }
     acc = acc + d * ((s0 + s1) + (s2 + s3))
   }
@@ -630,4 +637,85 @@ pub fn load_vector(f : @gguf.GgufFile, name : String) -> Result[Vector, ModelErr
     )
   }
   Ok({ name, data: FixedArray::from_array(values[:]) })
+}
+
+///|
+/// `(y_gate, y_up) = (x @ Wg^T, x @ Wu^T)` in a single pass over `x`.
+///
+/// The SwiGLU gate and up projections share their input and their shape, so
+/// computing them separately reads the activation vector twice and runs the loop
+/// machinery twice. Fusing them costs nothing in arithmetic and halves the
+/// activation traffic, which for a 576-wide activation and two 1536-row matrices
+/// is worth measurably more than it sounds.
+///
+/// Both matrices must have the same geometry; the caller is the model's own FFN,
+/// which constructs them from the same config, and a mismatch falls back to two
+/// separate calls rather than producing a wrong result.
+pub fn matvec_pair(
+  a : Matrix,
+  b : Matrix,
+  x : FixedArray[Float],
+  y_a : FixedArray[Float],
+  y_b : FixedArray[Float],
+) -> Unit {
+  if a.cols != b.cols || a.rows != b.rows || a.ty.id != b.ty.id {
+    a.matvec(x, y_a)
+    b.matvec(x, y_b)
+    return
+  }
+  let n_rows = a.rows
+  let cols = a.cols
+  let bs = a.ty.block_size
+  let n_blocks = cols / bs
+  let data_a = a.data
+  let data_b = b.data
+  let rb = a.row_bytes
+  match a.ty.id {
+    8 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        let off = r * rb
+        y_a[r] = dot_q8_0(data_a, off, x, 0, n_blocks)
+        y_b[r] = dot_q8_0(data_b, off, x, 0, n_blocks)
+      }
+    }
+    2 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        let off = r * rb
+        y_a[r] = dot_q4_0(data_a, off, x, 0, n_blocks)
+        y_b[r] = dot_q4_0(data_b, off, x, 0, n_blocks)
+      }
+    }
+    0 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        let off = r * rb
+        y_a[r] = dot_f32(data_a, off, x, 0, n_blocks)
+        y_b[r] = dot_f32(data_b, off, x, 0, n_blocks)
+      }
+    }
+    1 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        let off = r * rb
+        y_a[r] = dot_f16(data_a, off, x, 0, n_blocks)
+        y_b[r] = dot_f16(data_b, off, x, 0, n_blocks)
+      }
+    }
+    12 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        let off = r * rb
+        y_a[r] = dot_q4_K(data_a, off, x, 0, n_blocks)
+        y_b[r] = dot_q4_K(data_b, off, x, 0, n_blocks)
+      }
+    }
+    14 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        let off = r * rb
+        y_a[r] = dot_q6_K(data_a, off, x, 0, n_blocks)
+        y_b[r] = dot_q6_K(data_b, off, x, 0, n_blocks)
+      }
+    }
+    _ => {
+      a.matvec(x, y_a)
+      b.matvec(x, y_b)
+    }
+  }
 }
