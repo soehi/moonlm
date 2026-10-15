@@ -1,0 +1,9 @@
+// Byte-level BPE tokenizer (GPT-2 style), for SmolLM2 and similar models.
+//
+// Pure MoonBit, no FFI, no third-party dependencies. Must build and test on
+// both `native` and `wasm-gc`.
+
+import {
+  "moonbitlang/core/encoding/utf8",
+  "soehi/moonlm/gguf",
+}
