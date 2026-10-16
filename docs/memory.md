@@ -195,14 +195,19 @@ The engine is handed a view over the file bytes, not a copy.
 |---|---|---|---|
 | before load | 4.6 MB | 1.8 MB | 46.5 MB |
 | after load | 69.4 MB | 140 MB | 287.5 MB |
-| after generate | 165.8 MB | 140 MB | 367.3 MB |
+| after generate | 118–165 MB | 140 MB | 367.3 MB |
 
 Reading it:
 
 - `external` at 140 MB is the model bytes held once, which is the floor for
-  loading a 138 MB model this way. The engine's own structures (tokenizer,
-  matrix descriptors, KV cache) are the 69.4 MB of `heapUsed` after load, and
-  generation adds about 96 MB more.
+  loading a 138 MB model this way. It is stable across runs, because it counts
+  the single buffer the engine was handed.
+- The engine's own structures (tokenizer, matrix descriptors, KV cache) are the
+  ~70 MB of `heapUsed` after load, stable to within a megabyte across runs.
+  Generation then adds more, but that row is a range rather than a number: three
+  runs gave 164.5, 118 and 148.7 MB, because when the collector runs is not
+  deterministic. It used to be recorded as a single value, which implied a
+  precision this measurement does not have.
 - RSS after generate, 367 MB, is the honest ceiling for this workload in Node.
   It is higher than the native figure (189 MB) because a JavaScript engine
   carries its own runtime plus a garbage collector, and because RSS counts
