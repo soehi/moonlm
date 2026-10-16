@@ -6,3 +6,6 @@ target/
 __pycache__/
 *.pyc
 test_model.gguf
+
+# Local tool state (security scanner ledger), not part of the project
+.mimosa/
