@@ -1,7 +1,7 @@
 # MoonLM
 
 纯 MoonBit 编写的**端侧本地 LLM 推理引擎 + 强类型 Agent 运行时**。
-零 API 调用、零数据外传，同一份代码编译到 **native 边缘设备** 与 **浏览器 (Wasm-GC)** 两个后端。
+零 API 调用、零数据外传，同一份代码编译到 **native 边缘设备** 与 **浏览器** 两个后端。
 
 ## 当前进度
 
@@ -43,12 +43,43 @@
   （验收线 95%）。全部 8 处分歧都落在参考实现自身「近似平局」的位置
   （top-2 logprob 差距仅 0.002–0.17 nat），即浮点漂移而非结构错误。
   方法与完整数据见 [docs/crosscheck.md](docs/crosscheck.md)。
-- 真实模型可生成连贯文本；单线程 decode 14.4–14.7 tok/s、prefill 15.0 tok/s
-  （验收线 15 tok/s，属压线达标）。
+- 真实模型可生成连贯文本；单线程 decode 18.4 tok/s、prefill 19.0 tok/s
+  （M2 的内核优化把 decode 从 14.4 提到 18.4，见下）。
 - 性能与瓶颈分析见 [docs/performance.md](docs/performance.md)：内核为纯标量、
-  无 SIMD，比 llama.cpp 单线程（57.2 tok/s）慢约 4 倍。
+  无 SIMD，比 llama.cpp 单线程（57.2 tok/s）慢约 3 倍。
 
-后续阶段（浏览器 Demo、Agent 运行时）见 [PLAN.md](PLAN.md)。
+**M2 — 浏览器：Web Demo** ✅ **完成**
+
+| 交付物 | 状态 |
+|---|---|
+| `src/web/`：JS 边界 API（`foreign_library` + `#export_name`，handle 表 + 流式回调） | ✅ |
+| `web/`：演示页（本地文件 / URL 两种加载、流式输出、tok/s 实时显示） | ✅ |
+| `tools/serve_web.py`：构建 + 组装 `web/dist/` + loopback 预览服务 | ✅ |
+
+**验收结果**
+
+- Chrome（in-app Chromium）加载 SmolLM2-135M Q8_0（138 MB）后可流式生成：
+  **decode 6.3 tok/s、prefill 8.2 tok/s**，超过 ≥3 tok/s 的目标 2 倍。
+- **浏览器与 native 的 token id 逐位一致**（两个 prompt 均验证），比验收线更强。
+- 加载体验：读取 198 ms、解析 4.4 s、引擎产物 306 KB。
+- **零网络验证**（三重证据）：产物无任何外部 URL；instrument `fetch`/`XHR`/
+  `WebSocket`/`sendBeacon` 后推理期间记录为 **0 次调用**；把 `fetch` 替换为
+  必然 reject 的函数后仍能正确生成。
+- 完整数据、决策依据与「不宣称什么」见 [docs/browser.md](docs/browser.md)。
+
+**浏览器目标是 `js` 而非原计划的 `wasm-gc`**（实测推翻）：wasm-gc 的 `Bytes` 是
+GC 数组引用，JavaScript 无法构造，且模块不导出内存，模型字节进不去
+（实测报 `type incompatibility when transforming from/to JS`）；`js` 后端下
+`Bytes` 就是 `Uint8Array`。MoonBit 官方 web 模板同样声明 `"preferred-target": "js"`。
+引擎各包仍双后端可构建可测试，只有这个边界包是 `js` 专属。
+
+**性能靠实测而非猜测修回来**：浏览器初次实测只有 0.7 tok/s（差目标 4 倍）。
+两个修复都是读**生成的 JavaScript** 找到的——`Float` 运算在该后端编译为
+`Math.fround` 调用（改 f64 累加，实测快 6 倍）；`Bytes` 索引生成 `$bound_check`
+调用（改 `Bytes::unsafe_get`）。两项对 native 也有增益（14.4 → 18.4 tok/s），
+且改动后 llama.cpp 对拍与跨后端一致性均不变。
+
+后续阶段（Agent 运行时）见 [PLAN.md](PLAN.md)。
 
 ## 设计约束
 
@@ -91,6 +122,18 @@ chat 模板）/ `--dump-tokens`（输出 token id 而非文本，用于跨实现
 
 退出码：`0` 成功，`1` 文件不可读 / 不是 GGUF，`2` 用法错误。
 
+## 浏览器 Demo
+
+```bash
+python tools/serve_web.py --model-dir /path/to/ggufs
+# 打开 http://127.0.0.1:8000/ ，选一个 .gguf，按「生成」
+```
+
+`web/dist/` 是完全自包含的产物（一个 HTML + 一个 306 KB 的 JS），无后端、无 CDN。
+用文件选择框加载模型时页面不发起任何请求；用 URL 加载（`--model-dir` 提供）
+相当于从本地服务器读一个静态文件。推理过程本身零网络请求，见
+[docs/browser.md](docs/browser.md)。
+
 ## 工具
 
 ```bash
@@ -119,3 +162,4 @@ loopback 上起一个 `llama-server`（见 [docs/crosscheck.md](docs/crosscheck.
 - [docs/gguf-notes.md](docs/gguf-notes.md) — GGUF 格式图、位布局与实现踩坑笔记
 - [docs/crosscheck.md](docs/crosscheck.md) — 与 llama.cpp 的逐位置对拍方法与数据
 - [docs/performance.md](docs/performance.md) — 性能实测、瓶颈分析与已否决的优化路径
+- [docs/browser.md](docs/browser.md) — 浏览器目标选择依据、实测数据与零网络验证

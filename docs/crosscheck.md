@@ -90,11 +90,19 @@ between the two tokens.
 | Engine | prefill (pp32) | decode (tg64) |
 |---|---|---|
 | llama.cpp b11675, 1 thread | 370.2 tok/s | 57.2 tok/s |
-| moonlm, pure MoonBit, 1 thread | 15.0 tok/s | 14.4 tok/s |
+| moonlm, pure MoonBit, 1 thread, native | 19.0 tok/s | 18.4 tok/s |
+| moonlm, pure MoonBit, browser (`js`) | 8.2 tok/s | 6.3 tok/s |
 
-This engine is roughly 4x slower at decode. That is the honest number: the
-kernels are scalar (no SIMD), and the matvec inner loop is what dominates. See
-`docs/performance.md` for what was tried and what the bottleneck is.
+The native build is roughly 3x slower than llama.cpp at decode. That is the
+honest number: the kernels are scalar (no SIMD), the build is single-threaded,
+and the matvec inner loop is what dominates. The browser build is slower again,
+because JavaScript gives no SIMD lanes at all. See `docs/performance.md` for
+what was tried and what the bottleneck is, and `docs/browser.md` for the
+browser-specific measurements.
+
+These figures are from after the M2 kernel work; the numbers quoted when M1 was
+first checked in were 15.0 / 14.4 (native) and 0.7 (browser, before the fixes
+described in `docs/browser.md`).
 
 ## What the numbers do and do not establish
 
