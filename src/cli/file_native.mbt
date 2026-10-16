@@ -26,10 +26,6 @@ extern "C" fn ml_fclose(f : MlFile) -> Int = "ml_fclose"
 extern "C" fn ml_size(f : MlFile) -> Int64 = "ml_size"
 
 ///|
-#borrow(ptr)
-extern "C" fn ml_read(ptr : FixedArray[Byte], f : MlFile, n : Int64) -> Int64 = "ml_read"
-
-///|
 extern "C" fn ml_is_null(f : MlFile) -> Int = "ml_is_null"
 
 ///|
@@ -42,11 +38,28 @@ fn cstr(s : String) -> Bytes {
 }
 
 ///|
+/// Read exactly `n` bytes from `f` into a freshly allocated `Bytes`.
+///
+/// The allocation happens on the C side with `moonbit_make_bytes_raw`, so the
+/// file exists in the heap exactly once. Staging it through a
+/// `FixedArray[Byte]` and then copying into `Bytes` would hold two full copies
+/// of a 138 MB model at once, which is the dominant term in this CLI's peak
+/// memory.
+///
+/// Returns a zero-length `Bytes` on a short read; the caller compares against
+/// the size it already obtained, so the failure is still reported precisely.
+#borrow(handle)
+extern "C" fn ml_read_owned(handle : MlFile, n : Int64) -> Bytes = "ml_read_owned"
+
+///|
 /// Read an entire file into memory.
 ///
 /// Returns `Err` with a message rather than panicking when the file is missing
 /// or unreadable, so a mistyped path produces a diagnostic and a non-zero exit
 /// status instead of a traceback.
+///
+/// Peak allocation is one copy of the file: the size is checked first (which
+/// costs no memory), and the bytes are then allocated once on the C side.
 pub fn read_file(path : String) -> Result[Bytes, String] {
   let f = ml_fopen(cstr(path), cstr("rb"))
   if ml_is_null(f) != 0 {
@@ -61,15 +74,16 @@ pub fn read_file(path : String) -> Result[Bytes, String] {
     ml_fclose(f) |> ignore
     return Err("file is too large to map into a 32-bit buffer: \{size} bytes")
   }
-  let n = size.to_int()
-  let buf : FixedArray[Byte] = FixedArray::make(n, b'\x00')
-  let got = ml_read(buf, f, size)
+  let buf = ml_read_owned(f, size)
   ml_fclose(f) |> ignore
-  if got != size {
-    return Err("short read on \{path}: got \{got} of \{size} bytes")
+  if buf.length().to_int64() != size {
+    return Err(
+      "short read on \{path}: got \{buf.length()} of \{size} bytes",
+    )
   }
-  Ok(Bytes::from_array(buf[:]))
+  Ok(buf)
 }
+
 ///|
 extern "C" fn ml_exit(code : Int) -> Unit = "ml_exit"
 

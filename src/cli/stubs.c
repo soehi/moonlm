@@ -51,21 +51,34 @@ int64_t ml_size(void *handle) {
 }
 
 /*
- * Read up to `n` bytes from the start of the file into a caller-owned buffer,
- * returning the number of bytes actually read.
+ * Read exactly `n` bytes from the start of the file into a MoonBit Bytes
+ * allocated here, and return it.
+ *
+ * Allocating on this side is what keeps peak memory at one copy of the file:
+ * allocating a FixedArray[Byte] in MoonBit and copying it into a Bytes would
+ * hold both at once, which for a 138 MB model is 138 MB of avoidable peak. The
+ * returned object is a normal MoonBit heap object, so the GC owns it from here.
+ *
+ * Returns a zero-length Bytes if anything goes wrong; the caller already knows
+ * the expected size and reports the mismatch.
  */
 MOONBIT_FFI_EXPORT
-int64_t ml_read(char *buf, void *handle, int64_t n) {
+moonbit_bytes_t ml_read_owned(void *handle, int64_t n) {
   FILE *f = (FILE *)handle;
   if (fseek(f, 0, SEEK_SET) != 0) {
-    return -1;
+    return moonbit_make_bytes_raw(0);
   }
-  return (int64_t)fread(buf, 1, (size_t)n, f);
+  moonbit_bytes_t buf = moonbit_make_bytes_raw((int32_t)n);
+  size_t got = fread(buf, 1, (size_t)n, f);
+  if ((int64_t)got != n) {
+    return moonbit_make_bytes_raw(0);
+  }
+  return buf;
 }
 
 /*
- * Process termination with a status code, so the CLI can report a failed
- * inspection through its exit status.
+ * Read one line from stdin into a caller-owned buffer, including the trailing
+ * newline and without NUL termination. Returns the byte count, or 0 at EOF.
  */
 MOONBIT_FFI_EXPORT
 void ml_exit(int32_t code) {

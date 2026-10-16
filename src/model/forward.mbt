@@ -47,34 +47,65 @@ pub(all) struct LayerWeights {
 } derive(Debug)
 
 ///|
-/// Preallocated KV cache: [n_layer][n_head_kv][max_len][head_dim].
+/// Growable KV cache: [n_layer][n_head_kv][capacity][head_dim].
 ///
-/// Sized once from `context_length` and never reallocated, so decoding a token
-/// performs no allocation at all.
+/// `capacity` is what is currently allocated and `limit` is the model's context
+/// length, which growth never exceeds. Sizing the allocation to `limit` up front
+/// costs 2 * n_layer * n_head_kv * limit * head_dim * 4 bytes — about 360 MB for
+/// an 8192-position SmolLM2 — for a session that typically uses a few hundred
+/// positions. Starting at a working capacity and doubling on demand keeps the
+/// common case at tens of megabytes while still reaching the full context
+/// length when a long prompt needs it.
+///
+/// The position dimension is the third one, so growth re-lays out every
+/// (layer, head) block rather than extending in place; `grow_to` rebuilds both
+/// arrays and copies the live region across.
 pub(all) struct KVCache {
-  max_len : Int
-  head_dim : Int
+  n_layer : Int
   n_head_kv : Int
-  /// Flattened as ((layer * n_head_kv + head) * max_len + pos) * head_dim + d.
-  k : FixedArray[Float]
-  v : FixedArray[Float]
+  head_dim : Int
+  /// Allocated positions; always <= `limit`.
+  mut capacity : Int
+  /// Hard cap from the model's context length. Growth stops here.
+  limit : Int
+  /// Flattened as ((layer * n_head_kv + head) * capacity + pos) * head_dim + d.
+  mut k : FixedArray[Float]
+  mut v : FixedArray[Float]
   /// Number of positions written so far.
   mut len : Int
 } derive(Debug)
 
 ///|
-/// Create a zeroed KV cache sized for `max_len` positions.
+/// Positions allocated before any growth.
+///
+/// Large enough that an interactive turn never triggers a copy, small enough
+/// that the allocation is a rounding error next to the weights: 512 positions
+/// is about 24 MB for SmolLM2, against 360 MB for the full context.
+pub let kv_initial_capacity : Int = 512
+
+///|
+/// Create a zeroed KV cache.
+///
+/// Allocates `min(kv_initial_capacity, limit)` positions, where `limit` is the
+/// model's context length and the ceiling that growth respects.
 pub fn KVCache::new(
   n_layer : Int,
   n_head_kv : Int,
   head_dim : Int,
-  max_len : Int,
+  limit : Int,
 ) -> KVCache {
-  let n = n_layer * n_head_kv * max_len * head_dim
+  let capacity = if limit < kv_initial_capacity {
+    limit
+  } else {
+    kv_initial_capacity
+  }
+  let n = n_layer * n_head_kv * capacity * head_dim
   {
-    max_len,
-    head_dim,
+    n_layer,
     n_head_kv,
+    head_dim,
+    capacity,
+    limit,
     k: FixedArray::make(n, 0.0),
     v: FixedArray::make(n, 0.0),
     len: 0,
@@ -82,7 +113,57 @@ pub fn KVCache::new(
 }
 
 ///|
-/// Reset the cache to empty without freeing its storage.
+/// Total floats held across both cache arrays, for reporting.
+pub fn KVCache::scalar_count(self : KVCache) -> Int {
+  self.k.length() + self.v.length()
+}
+
+///|
+/// Re-layout the cache so it can address `new_capacity` positions.
+///
+/// Copies the live region for every (layer, head) block into the new arrays.
+/// `new_capacity` is clamped to `[capacity, limit]`: this is grow-only, and it
+/// refuses to exceed what the model can address.
+///
+/// Returns the capacity in effect afterwards.
+pub fn KVCache::grow_to(self : KVCache, new_capacity : Int) -> Int {
+  let target = if new_capacity > self.limit {
+    self.limit
+  } else if new_capacity < self.capacity {
+    self.capacity
+  } else {
+    new_capacity
+  }
+  if target <= self.capacity {
+    return self.capacity
+  }
+  let hd = self.head_dim
+  let old_cap = self.capacity
+  let blocks = self.n_layer * self.n_head_kv
+  // Only the positions actually written need moving; the rest of the new
+  // arrays is already zero.
+  let span = self.len * hd
+  let new_k : FixedArray[Float] = FixedArray::make(blocks * target * hd, 0.0)
+  let new_v : FixedArray[Float] = FixedArray::make(blocks * target * hd, 0.0)
+  for b = 0; b < blocks; b = b + 1 {
+    let old_base = b * old_cap * hd
+    let new_base = b * target * hd
+    for i = 0; i < span; i = i + 1 {
+      new_k[new_base + i] = self.k[old_base + i]
+      new_v[new_base + i] = self.v[old_base + i]
+    }
+  }
+  self.k = new_k
+  self.v = new_v
+  self.capacity = target
+  target
+}
+
+///|
+/// Reset the cache to empty without freeing or reallocating its storage.
+///
+/// Keeps `capacity` as-is: a session that has already grown to a long context
+/// will need it again, and shrinking would only trade memory for copies.
 pub fn KVCache::reset(self : KVCache) -> Unit {
   self.len = 0
 }
@@ -398,10 +479,25 @@ fn rope_in_place(
 /// The KV cache is written at `pos` for every layer; the caller advances
 /// `cache.len` after the token is accepted, so a prefill loop and a decode step
 /// share this one entry point.
+///
+/// Grows the cache when `pos` no longer fits: growth doubles the allocation
+/// until it covers `pos`, capped at the model's context length, so a long
+/// prompt silently extends the cache while a prompt beyond the context still
+/// fails with `ContextOverflow`.
 pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, ModelError] {
   let cfg = self.config
-  if pos >= self.cache.max_len {
-    return Err(ContextOverflow(pos=pos, max_len=self.cache.max_len))
+  if pos >= self.cache.limit {
+    return Err(ContextOverflow(pos=pos, max_len=self.cache.limit))
+  }
+  if pos >= self.cache.capacity {
+    // Double until the position fits. Starting from the current capacity keeps
+    // the amortized copy cost linear: each position is moved O(log(limit))
+    // times at most.
+    let mut target = self.cache.capacity
+    while target <= pos {
+      target = target * 2
+    }
+    self.cache.grow_to(target) |> ignore
   }
   if token < 0 || token >= cfg.vocab_size {
     return Err(BadValue(key="token_id", detail="\{token} is outside the vocabulary"))
@@ -434,9 +530,9 @@ pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, Mode
       rope_in_place(sc.k, h * head_dim, pos, head_dim, cfg.n_rot, cfg.rope_theta)
     }
     // 5. Append K/V for this position.
-    let base = (layer_idx * n_head_kv) * self.cache.max_len * head_dim
+    let base = (layer_idx * n_head_kv) * self.cache.capacity * head_dim
     for h = 0; h < n_head_kv; h = h + 1 {
-      let kc = base + h * self.cache.max_len * head_dim + pos * head_dim
+      let kc = base + h * self.cache.capacity * head_dim + pos * head_dim
       for d = 0; d < head_dim; d = d + 1 {
         self.cache.k[kc + d] = sc.k[h * head_dim + d]
         self.cache.v[kc + d] = sc.v[h * head_dim + d]
@@ -448,7 +544,7 @@ pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, Mode
     let heads_per_kv = cfg.heads_per_kv()
     for h = 0; h < n_head; h = h + 1 {
       let kvh = h / heads_per_kv
-      let kbase = base + kvh * self.cache.max_len * head_dim
+      let kbase = base + kvh * self.cache.capacity * head_dim
       // Scores: one dot product per cached position.
       for p = 0; p < n_pos; p = p + 1 {
         let mut dot : Float = 0.0
