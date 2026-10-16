@@ -70,13 +70,30 @@ the case that would indicate a real bug.
 
 Model: `SmolLM2-135M-Instruct-Q8_0.gguf`, 30 layers, n_embd 576, 9/3 GQA.
 
-Reference: llama.cpp build 11675 for the numbers below. Re-run against a
-locally-built reference (build 0.7.0-dev, MSVC 19.44, `--ctx-size 2048 -t 4`)
-after the memory work in `docs/memory.md`, and the same 280/288 reproduced — so
-the figure is not tied to one build of the reference.
+Two reference builds have been used, and they do not agree exactly:
 
+| Reference | overall argmax agreement |
+|---|---|
+| llama.cpp build 11675 (the original measurements below) | 280/288 = 97.22% |
+| llama.cpp 0.7.0-dev, locally built (`--ctx-size 2048 -t 4`) | 277/288 = 96.18% |
+
+The 3-position difference is the reference moving, not this engine. Checked by
+running the comparison twice against the same local server — once with the tree
+as it stands and once with it checked out at the revision before the memory work
+in `docs/memory.md` — and both produced **identical per-prompt results**,
+277/288. So the memory changes introduced no numeric drift, and the gap belongs
+to the reference build: a newer llama.cpp makes slightly different near-tie
+choices, which is the expected reason for a small shift in a number defined by
+near-ties.
+
+Both figures are above the 95% gate, and the qualitative conclusion is unchanged:
+agreement is high, and what remains is attributable to near-ties rather than to a
+wrong layout or grouping. Stating both builds is the point — a single figure
+would imply a precision the comparison does not have.
 
 ### Argmax agreement (teacher forcing), 48 steps per prompt
+
+Figures below are from build 11675.
 
 | Prompt | agree/total | rate |
 |---|---|---|

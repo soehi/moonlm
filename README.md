@@ -42,6 +42,9 @@
 - **与 llama.cpp 逐位置对拍：288 个位置上 280 个 argmax 一致 = 97.22%**
   （验收线 95%）。全部 8 处分歧都落在参考实现自身「近似平局」的位置
   （top-2 logprob 差距仅 0.002–0.17 nat），即浮点漂移而非结构错误。
+  注：换用本地新构建的 llama.cpp 参考（0.7.0-dev）时该数字为 277/288 =
+  96.18%，差异来自参考实现本身——同一本地参考下，内存优化前后的逐 prompt
+  结果逐位相同。两个数字都记录在 `docs/crosscheck.md`。
   方法与完整数据见 [docs/crosscheck.md](docs/crosscheck.md)。
 - 真实模型可生成连贯文本；单线程 decode 18.4 tok/s、prefill 19.0 tok/s
   （M2 的内核优化把 decode 从 14.4 提到 18.4，见下）。

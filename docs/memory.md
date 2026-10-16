@@ -246,7 +246,7 @@ was checked against the same three gates that guard the rest of the project:
 | Gate | Result after the fixes |
 |---|---|
 | Tests, both targets | 107 pass on native and wasm-gc |
-| llama.cpp argmax agreement | 280/288 = 97.22%, unchanged |
+| llama.cpp argmax agreement | 277/288 = 96.18% against a locally-built reference (280/288 = 97.22% against build 11675); per-prompt results identical before and after the memory work |
 | Greedy output vs. before | identical token ids |
 
 The third one is the sharpest: reading weights through a shared buffer plus an
