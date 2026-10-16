@@ -33,11 +33,11 @@ optimizations described below.
 | Model on disk | 138 MB | 138 MB |
 | `inspect` (parses, builds no Model) | 283 MB | **145 MB** |
 | `generate` (Model + KV cache) | 663 MB | **189 MB** |
-| `chat`, settled (steady state) | not measured | **156 MB** |
+| steady state (loaded + decoding) | not measured | **183 MB** |
 
-So the process now needs about **1.37x the model size** peak, and 1.13x once
-loading has settled. Before the fixes it was 4.8x, which is what put a
-few-hundred-MB device out of reach; that constraint is now gone.
+So the process now needs about **1.37x the model size** at peak, and 1.32x in
+steady state. Before the fixes it was 4.8x, which is what put a few-hundred-MB
+device out of reach; that constraint is now gone.
 
 ### Against llama.cpp, measured
 
@@ -48,13 +48,17 @@ read from the OS after the model loaded.
 
 | | moonlm | llama-server |
 |---|---|---|
-| settled (working set) | **156 MB** | 169 MB |
+| settled (working set) | **183 MB** | 169 MB |
 | peak | **189 MB** | 367 MB |
 
-The settled figures are close, which is the expected result: both hold one copy
-of a 138 MB model of weights plus a working context. The peak differs by 2x
-because the server allocates more transiently during startup — it grew a
-threadpool, four slots and a 2048-position cache up front.
+The settled figures are the same order, which is the expected result: both hold
+one copy of 138 MB of weights plus a working context. moonlm's is slightly
+higher, which is plausible rather than alarming — llama-server was given
+`--ctx-size 2048` while moonlm's KV cache starts at 512 positions but its
+growable buffer plus the scratch arrays and sampler state are all resident at
+once, and the two programs count slightly different things as "the model". The
+peak differs by 2x because the server allocates more transiently during startup:
+it grew a threadpool, four slots and a 2048-position cache up front.
 
 Note what is and is not being compared. These are two programs with different
 jobs: `moonlm generate` answers one prompt and exits, `llama-server` stays up
@@ -142,21 +146,36 @@ block rather than extending in place, and copies only the `len` positions
 actually written; the rest of the new arrays is already zero.
 
 
-## How this was measured, and two ways that were wrong
+## How this was measured, and four ways that were wrong
 
-`tools/measure_mem.ps1` polls the OS's `PeakWorkingSet64` counter while the
-process runs and keeps the maximum.
+`tools/measure_mem.ps1` reads the OS's own counters for the process it starts,
+and reports two of them because they answer different questions:
 
-Two earlier approaches produced wrong numbers and are worth not repeating:
+- `PeakWorkingSet64` — the high-water mark over the run. This is what "how much
+  does this need" means for a short-lived command.
+- `WorkingSet64` — the current value, sampled after the process has settled. A
+  peak is a historical maximum and cannot fall, so freeing a buffer lowers the
+  current value and leaves the peak untouched. Only the settled figure can show
+  that memory was released, which is why the script has a scenario designed to
+  still be running when the settle point passes.
+
+Four approaches produced wrong numbers here, and each is worth not repeating:
 
 - **Sampling `tasklist` in a loop** raced with the process phases. The same
   workload reported 145 MB and 524 MB on two runs.
 - **Reading `PeakWorkingSet64` after exit** returns 0, because the process
   handle is already released.
-
-A related measurement subtlety: peak working set is a high-water mark, so freeing
-a reference does not lower it for work already done. To see the effect of a
-memory fix, measure the resident set once loading has settled, not only the peak.
+- **Settling too early.** The settle point was first set to 2500 ms, which is
+  inside the model's load time, so the "steady state" was read mid-load and came
+  out at 156 MB. It looked like a better result and was simply a measurement
+  taken too early; the real figure is 183 MB. The scenario's duration also has
+  to outlast the settle point — the script now reports the elapsed time when it
+  misses, so the constant can be tuned from evidence instead of guessed at.
+- **Taking a single current-value sample.** A reading taken while the process
+  tears down comes back as 0, and `HasExited` can still read false at that
+  moment; three runs of one workload returned 0 MB, 21.8 MB and 182.9 MB. The
+  script now discards zero readings and takes the largest of the rest, which is
+  stable because the steady state does not drop during decoding.
 
 ## Browser-side memory
 
@@ -206,7 +225,7 @@ With all three fixes in, the honest summary is:
 
 - **Deployment size is a clear strength**: 473 KB native executable with no
   private DLLs, and a 33 KB brotli-compressed engine for the browser.
-- **Memory is in the same range as llama.cpp**, and better on peak: 156 MB settled
+- **Memory is in the same range as llama.cpp**, and better on peak: 183 MB settled
   against 169 MB, 189 MB peak against 367 MB, for the same 138 MB model.
 - **Throughput did not regress**: 19.02 tok/s after against 19.00 before, from an
   interleaved ten-round comparison.
