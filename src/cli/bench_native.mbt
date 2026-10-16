@@ -88,3 +88,79 @@ pub fn profile_decode(path : String, iters : Int) -> Int {
   }
   0
 }
+
+///|
+/// Dump the top-k logits after evaluating a prompt given as token ids.
+///
+/// Exists for the cross-implementation check: comparing *sampled tokens* cannot
+/// tell a real bug from a near-tie broken by floating-point drift, so this
+/// reports the logit values at each position. A reference implementation's
+/// `logprob` for the same position is the other half of the comparison.
+///
+/// The prompt is taken as ids rather than text on purpose — it removes the
+/// tokenizer from the experiment, so a mismatch can only come from the forward
+/// pass.
+pub fn dump_logits(path : String, ids : Array[Int], top : Int) -> Int {
+  let buf = match read_file(path) {
+    Ok(b) => b
+    Err(e) => {
+      println("error: \{e}")
+      return 1
+    }
+  }
+  let engine = match @engine.PureEngine::load_bytes(buf, path) {
+    Ok(e) => e
+    Err(e) => {
+      println("error: \{e}")
+      return 1
+    }
+  }
+  let m = engine.model
+  m.cache.reset()
+  let mut pos = 0
+  for id in ids {
+    match m.forward(id, pos) {
+      Ok(_) => ()
+      Err(e) => {
+        println("error: forward at \{pos}: \{e.message()}")
+        return 1
+      }
+    }
+    m.cache.len = pos + 1
+    // Emit the ranking after each prompt token: the logits that follow the
+    // prefix `<ids[0..=pos]>`. That is the same quantity a reference reports
+    // when it gives per-position logprobs, so no alignment step is needed.
+    emit_top_logits(m.logits(), top, pos)
+    pos = pos + 1
+  }
+  0
+}
+
+///|
+/// Print the `top` highest logits with their ids and values, highest first.
+fn emit_top_logits(logits : FixedArray[Float], top : Int, pos : Int) -> Unit {
+  let n = logits.length()
+  let idx : Array[Int] = []
+  for i = 0; i < n; i = i + 1 {
+    idx.push(i)
+  }
+  // Partial selection sort over the ids: only the first `top` positions need to
+  // be right, so this is cheaper than sorting all 49152 entries.
+  let k = if top < n { top } else { n }
+  for i = 0; i < k; i = i + 1 {
+    let mut best = i
+    for j = i + 1; j < n; j = j + 1 {
+      if logits[idx[j]] > logits[idx[best]] {
+        best = j
+      }
+    }
+    let tmp = idx[i]
+    idx[i] = idx[best]
+    idx[best] = tmp
+  }
+  println("pos \{pos}:")
+  for i = 0; i < k; i = i + 1 {
+    let id = idx[i]
+    println("  \{(i + 1)} \{id} \{logits[id].to_double()}")
+  }
+}

@@ -309,6 +309,7 @@ fn usage() -> String {
     "  --top-p P           Nucleus sampling threshold",
     "  --seed N            PRNG seed (default 42)",
     "  --raw               Do not wrap the prompt in the chat template",
+    "  --dump-tokens       Print generated token ids instead of text",
   ].join("\n")
 }
 
@@ -413,6 +414,32 @@ fn run(args : Array[String]) -> Int {
   }
   if subcommand == "bench" {
     return run_bench(args)
+  }
+  if subcommand == "logits" {
+    if args.length() < 4 {
+      println("error: 'logits' needs a model path and a comma-separated token id list")
+      return 2
+    }
+    let ids : Array[Int] = []
+    let mut bad = false
+    for part in args[3].split(",") {
+      match parse_int_arg(part.to_owned()) {
+        Ok(v) => ids.push(v)
+        Err(e) => {
+          println("error: \{e}")
+          bad = true
+        }
+      }
+    }
+    if bad {
+      return 2
+    }
+    let top = if args.length() > 5 && args[4] == "--top" {
+      parse_int_arg(args[5]).unwrap_or(5)
+    } else {
+      5
+    }
+    return dump_logits(args[2], ids, top)
   }
   if subcommand == "profile" {
     if args.length() < 3 {

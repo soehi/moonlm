@@ -10,6 +10,12 @@ pub(all) struct GenOptions {
   seed : UInt64
   /// Wrap the prompt in the ChatML template before encoding.
   use_chat_template : Bool
+  /// Emit the generated token ids instead of the decoded text.
+  ///
+  /// Comparing text against another implementation cannot separate "sampled a
+  /// different token" from "sampled the same token, rendered differently", so a
+  /// cross-implementation check needs the ids.
+  dump_tokens : Bool
 } derive(Debug)
 
 ///|
@@ -28,6 +34,7 @@ fn parse_gen_options(
   let mut top_p = -1.0
   let mut seed = 42UL
   let mut use_chat_template = true
+  let mut dump_tokens = false
   let mut i = start
   while i < args.length() {
     let flag = args[i]
@@ -63,6 +70,8 @@ fn parse_gen_options(
       }
     } else if flag == "--raw" {
       use_chat_template = false
+    } else if flag == "--dump-tokens" {
+      dump_tokens = true
     } else {
       return Err("unknown option '\{flag}'")
     }
@@ -82,7 +91,7 @@ fn parse_gen_options(
   } else {
     @sampler.Temperature(temperature=temperature)
   }
-  Ok({ max_tokens, sampler, seed, use_chat_template })
+  Ok({ max_tokens, sampler, seed, use_chat_template, dump_tokens })
 }
 
 ///|
@@ -202,15 +211,25 @@ fn run_generate(args : Array[String]) -> Int {
   // tokens, so a piece on its own is not always printable text; the caller that
   // needs clean output should decode the accumulated tokens instead, which is
   // what the final summary line does.
+  let ids : Array[Int] = []
   let result = @engine.Engine::generate(
     engine,
     full_prompt,
     opts.max_tokens,
     opts.sampler,
     opts.seed,
-    fn(_, piece) { print_raw(piece) },
+    fn(id, piece) {
+      ids.push(id)
+      if !opts.dump_tokens {
+        print_raw(piece)
+      }
+    },
   )
-  println("")
+  if opts.dump_tokens {
+    println(ids.map(fn(i) { i.to_string() }).join(" "))
+  } else {
+    println("")
+  }
   match result {
     Err(e) => {
       println("error: \{e}")
