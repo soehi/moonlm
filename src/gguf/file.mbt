@@ -171,8 +171,58 @@ pub fn GgufFile::index_of_tensor(self : GgufFile, name : String) -> Int? {
 }
 
 ///|
+/// The whole buffer this file was parsed from.
+///
+/// Exposed so a caller can hold one shared reference and address tensors by
+/// offset, instead of copying each tensor's payload out and holding a second
+/// copy of the weights.
+pub fn GgufFile::buffer(self : GgufFile) -> Bytes {
+  self.buf
+}
+
+///|
+/// Where a tensor's payload lives: an offset into the file buffer and its
+/// length in bytes.
+pub(all) struct TensorSpan {
+  /// Byte offset of the payload within the file buffer.
+  start : Int
+  /// Payload length in bytes.
+  byte_len : Int
+} derive(Eq, Debug)
+
+///|
+/// Locate tensor `index`'s payload without copying it.
+///
+/// This is what a caller that keeps the file buffer alive should use; the
+/// returned offsets address the same `Bytes` that `buffer()` exposes.
+pub fn GgufFile::tensor_span(
+  self : GgufFile,
+  index : Int,
+) -> Result[TensorSpan, GgufError] {
+  let t = self.tensors[index]
+  match t.nbytes {
+    None =>
+      Err(
+        TensorOutOfRange(
+          name=t.name,
+          offset=0L,
+          nbytes=-1L,
+          data_len=self.data_len(),
+        ),
+      )
+    Some(nbytes) => {
+      let start = self.data_start + t.offset.reinterpret_as_int64()
+      Ok({ start: start.to_int(), byte_len: nbytes.to_int() })
+    }
+  }
+}
+
+///|
 /// The raw payload bytes of tensor `index`, spanning `nbytes` from the data
 /// section.
+///
+/// Returns an owned copy. Callers that keep the file buffer alive should prefer
+/// `tensor_span`, which avoids duplicating the payload.
 pub fn GgufFile::tensor_bytes(
   self : GgufFile,
   index : Int,

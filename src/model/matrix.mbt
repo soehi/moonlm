@@ -46,7 +46,18 @@ fn bv_scale_min_k4(j : Int, buf : Bytes, q_off : Int) -> (Int, Int) {
 }
 
 ///|
-/// A quantized matrix: the raw GGUF payload plus its geometry.
+/// A quantized matrix: a view into the model's file buffer plus its geometry.
+///
+/// `data` is the whole file buffer, shared by every matrix in the model, and
+/// `base` is where this tensor's payload begins. Slicing each tensor out into
+/// its own `Bytes` would cost one copy of every weight — about 133 MB for
+/// SmolLM2 Q8_0 — on top of the file buffer that has to stay alive anyway,
+/// because the kernels read from it.
+///
+/// The dot kernels already take `(data, row_offset, ...)`, so a matrix row is
+/// addressed as `base + row * row_bytes` and the kernels are unchanged. The
+/// cost of sharing is lifetime: the buffer stays alive as long as any matrix
+/// references it, which is exactly what is wanted while the model is loaded.
 pub(all) struct Matrix {
   /// Tensor name, for error messages.
   name : String
@@ -58,9 +69,17 @@ pub(all) struct Matrix {
   cols : Int
   /// Bytes per row.
   row_bytes : Int
-  /// The quantized payload, exactly as it appears in the file.
+  /// The `Bytes` the payload lives in, shared with the rest of the model.
   data : Bytes
+  /// Byte offset of this tensor's payload within `data`.
+  base : Int
 } derive(Debug)
+
+///|
+/// Bytes of this matrix's payload.
+pub fn Matrix::payload_len(self : Matrix) -> Int {
+  self.row_bytes * self.rows
+}
 
 ///|
 /// Build a `Matrix` over a tensor's payload.
@@ -101,21 +120,31 @@ pub fn Matrix::from_tensor(
     Some(i) => i
     None => return Err(MissingTensor(name=name))
   }
-  let data = match f.tensor_bytes(index) {
-    Ok(b) => b
+  // Locate the payload by offset into the shared file buffer rather than
+  // copying it out. `tensor_bytes` would hand back an owned copy per tensor.
+  let payload = match f.tensor_span(index) {
+    Ok(span) => span
     Err(e) => return Err(TensorRead(name=name, reason=e.message()))
   }
   let expected = row_bytes * rows
-  if data.length() != expected {
+  if payload.byte_len != expected {
     return Err(
       TensorShape(
         name=name,
         expected="\{expected} payload bytes",
-        found="\{data.length()}",
+        found="\{payload.byte_len}",
       ),
     )
   }
-  Ok({ name, ty, rows, cols, row_bytes, data })
+  Ok({
+    name,
+    ty,
+    rows,
+    cols,
+    row_bytes,
+    data: f.buffer(),
+    base: payload.start,
+  })
 }
 
 ///|
@@ -144,7 +173,13 @@ pub fn Matrix::dequant_row(
   let n_blocks = self.cols / bs
   match self.ty.id {
     0 | 1 | 2 | 8 | 12 | 14 => {
-      decode_row_into(self.ty, self.data, row * self.row_bytes, out, n_blocks)
+      decode_row_into(
+        self.ty,
+        self.data,
+        self.base + row * self.row_bytes,
+        out,
+        n_blocks,
+      )
       Ok(())
     }
     _ =>
@@ -264,39 +299,40 @@ pub fn Matrix::matvec(
   let n_blocks = cols / bs
   let data = self.data
   let rb = self.row_bytes
+  let base = self.base
   let ty = self.ty
-  // Each row is addressed by offset into the whole payload rather than by
+  // Each row is addressed by offset into the shared file buffer rather than by
   // slicing out a view: the LM head has 49152 rows, and constructing a view per
   // row costs more than the arithmetic in it.
   match ty.id {
     0 => {
       for r = 0; r < n_rows; r = r + 1 {
-        y[r] = dot_f32(data, r * rb, x, 0, n_blocks)
+        y[r] = dot_f32(data, base + r * rb, x, 0, n_blocks)
       }
     }
     1 => {
       for r = 0; r < n_rows; r = r + 1 {
-        y[r] = dot_f16(data, r * rb, x, 0, n_blocks)
+        y[r] = dot_f16(data, base + r * rb, x, 0, n_blocks)
       }
     }
     2 => {
       for r = 0; r < n_rows; r = r + 1 {
-        y[r] = dot_q4_0(data, r * rb, x, 0, n_blocks)
+        y[r] = dot_q4_0(data, base + r * rb, x, 0, n_blocks)
       }
     }
     8 => {
       for r = 0; r < n_rows; r = r + 1 {
-        y[r] = dot_q8_0(data, r * rb, x, 0, n_blocks)
+        y[r] = dot_q8_0(data, base + r * rb, x, 0, n_blocks)
       }
     }
     12 => {
       for r = 0; r < n_rows; r = r + 1 {
-        y[r] = dot_q4_K(data, r * rb, x, 0, n_blocks)
+        y[r] = dot_q4_K(data, base + r * rb, x, 0, n_blocks)
       }
     }
     14 => {
       for r = 0; r < n_rows; r = r + 1 {
-        y[r] = dot_q6_K(data, r * rb, x, 0, n_blocks)
+        y[r] = dot_q6_K(data, base + r * rb, x, 0, n_blocks)
       }
     }
     _ => ()
@@ -323,7 +359,7 @@ pub fn Matrix::matvec_at(
     y[y_off + r] = dot_row(
       self.ty,
       self.data,
-      r * self.row_bytes,
+      self.base + r * self.row_bytes,
       x,
       x_off,
       n_blocks,
@@ -706,48 +742,50 @@ pub fn matvec_pair(
   let n_blocks = cols / bs
   let data_a = a.data
   let data_b = b.data
+  let base_a = a.base
+  let base_b = b.base
   let rb = a.row_bytes
   match a.ty.id {
     8 => {
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
-        y_a[r] = dot_q8_0(data_a, off, x, 0, n_blocks)
-        y_b[r] = dot_q8_0(data_b, off, x, 0, n_blocks)
+        y_a[r] = dot_q8_0(data_a, base_a + off, x, 0, n_blocks)
+        y_b[r] = dot_q8_0(data_b, base_b + off, x, 0, n_blocks)
       }
     }
     2 => {
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
-        y_a[r] = dot_q4_0(data_a, off, x, 0, n_blocks)
-        y_b[r] = dot_q4_0(data_b, off, x, 0, n_blocks)
+        y_a[r] = dot_q4_0(data_a, base_a + off, x, 0, n_blocks)
+        y_b[r] = dot_q4_0(data_b, base_b + off, x, 0, n_blocks)
       }
     }
     0 => {
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
-        y_a[r] = dot_f32(data_a, off, x, 0, n_blocks)
-        y_b[r] = dot_f32(data_b, off, x, 0, n_blocks)
+        y_a[r] = dot_f32(data_a, base_a + off, x, 0, n_blocks)
+        y_b[r] = dot_f32(data_b, base_b + off, x, 0, n_blocks)
       }
     }
     1 => {
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
-        y_a[r] = dot_f16(data_a, off, x, 0, n_blocks)
-        y_b[r] = dot_f16(data_b, off, x, 0, n_blocks)
+        y_a[r] = dot_f16(data_a, base_a + off, x, 0, n_blocks)
+        y_b[r] = dot_f16(data_b, base_b + off, x, 0, n_blocks)
       }
     }
     12 => {
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
-        y_a[r] = dot_q4_K(data_a, off, x, 0, n_blocks)
-        y_b[r] = dot_q4_K(data_b, off, x, 0, n_blocks)
+        y_a[r] = dot_q4_K(data_a, base_a + off, x, 0, n_blocks)
+        y_b[r] = dot_q4_K(data_b, base_b + off, x, 0, n_blocks)
       }
     }
     14 => {
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
-        y_a[r] = dot_q6_K(data_a, off, x, 0, n_blocks)
-        y_b[r] = dot_q6_K(data_b, off, x, 0, n_blocks)
+        y_a[r] = dot_q6_K(data_a, base_a + off, x, 0, n_blocks)
+        y_b[r] = dot_q6_K(data_b, base_b + off, x, 0, n_blocks)
       }
     }
     _ => {
