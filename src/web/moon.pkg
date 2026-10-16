@@ -2,9 +2,21 @@
 //
 // `pkgtype(kind: "foreign_library")` is what makes `#export_name` legal here and
 // what tells the build to emit a linkable module rather than an executable.
-// Target `js`: on `wasm-gc` the boundary types are GC references JavaScript
-// cannot construct, and no memory is exported, so the browser cannot hand this
-// package a model file. See docs/browser.md for the measurements.
+//
+// `supported_targets = "js"` restricts this package to the `js` backend, for two
+// reasons that were both measured rather than assumed:
+//
+//   * On `wasm-gc`, `Bytes` is a GC array reference that JavaScript cannot
+//     construct and the module exports no memory, so a browser cannot hand this
+//     package a model file at all.
+//   * On `native`, a newer toolchain rejects `#export_name` on a function whose
+//     signature contains a closure ("the Native backend cannot export types
+//     containing unsupported callback"), and `moonlm_generate` takes an
+//     `on_token : (String) -> Unit` so tokens can stream to the caller.
+//
+// The engine packages this one wraps (`engine`, `model`, `tokenizer`, `sampler`,
+// `gguf`, `tensor`) are all backend-agnostic and still build and test on native
+// and wasm-gc; only the JavaScript boundary is `js`-only. See docs/browser.md.
 
 import {
   "soehi/moonlm/engine",
@@ -12,3 +24,5 @@ import {
 }
 
 pkgtype(kind: "foreign_library")
+
+supported_targets = "js"
