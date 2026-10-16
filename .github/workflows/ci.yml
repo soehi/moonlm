@@ -58,3 +58,11 @@ jobs:
 
       - name: Build (wasm-gc)
         run: moon build --target wasm-gc
+
+      # The browser target is `js`, not `wasm-gc`: wasm-gc's Bytes is a GC array
+      # reference that JavaScript cannot construct, so the model bytes cannot be
+      # handed in. The `web` package is the browser surface, and it is the one
+      # consumers actually load, so a break here has to fail CI even though the
+      # rest of the tree builds for two other backends.
+      - name: Build (js, the browser target)
+        run: moon build src/web --target js --release
