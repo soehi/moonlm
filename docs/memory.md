@@ -33,6 +33,7 @@ optimizations described below.
 | Model on disk | 138 MB | 138 MB |
 | `inspect` (parses, builds no Model) | 283 MB | **145 MB** |
 | `generate` (Model + KV cache) | 663 MB | **189 MB** |
+| `generate` with a long prompt, KV cache grown | not measured | **189 MB** |
 | steady state (loaded + decoding) | not measured | **183 MB** |
 
 So the process now needs about **1.37x the model size** at peak, and 1.32x in
@@ -144,6 +145,13 @@ SmolLM2. `KVCache::grow_to` doubles on demand and stops at `limit`. Because the
 position dimension is the third of four, growth re-lays out every (layer, head)
 block rather than extending in place, and copies only the `len` positions
 actually written; the rest of the new arrays is already zero.
+
+Growth is the one path that allocates mid-run, so it is measured rather than
+assumed: a prompt of about 1800 tokens — well past the 512-position starting
+capacity, forcing two re-layouts — peaks at **188.8 MB**, the same as a
+short prompt. The re-layout's transient cost is therefore inside the noise of
+loading, and the doubling means it happens O(log context) times rather than once
+per token.
 
 
 ## How this was measured, and four ways that were wrong

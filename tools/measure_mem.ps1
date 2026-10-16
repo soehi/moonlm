@@ -40,10 +40,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$Model,
   [string]$Exe = "_build\native\release\build\cli\cli.exe",
-  # Tokens for the decode scenarios; the long-prompt one uses this too.
-  [int]$Tokens = 64,
-  # Turns a prompt long enough to exceed the initial KV capacity.
-  [int]$LongTokens = 1400
+  # Tokens for the decode scenario.
+  [int]$Tokens = 64
 )
 
 $exePath = (Resolve-Path $Exe).Path
@@ -131,17 +129,24 @@ $loadOnly = Invoke-Measured @("generate", $modelPath, "hi", "--max-tokens", "1",
 Invoke-Measured @("generate", $modelPath, "The capital of France is", "--max-tokens", "$Tokens",
                   "--temperature", "0", "--raw") "generate $Tokens tokens" | Out-Null
 
+# The one path that allocates mid-run: a prompt long enough to outgrow the KV
+# cache's initial 512 positions, so growth (and its re-layout copy) actually
+# happens. Without this scenario the growth path is never measured, and a prompt
+# that crosses the boundary would be the first thing a user hit.
+$longPrompt = ("The history of computing began long before the electronic age, " +
+               "with mechanical aids and tabulating machines. ") * 16
+$growth = Invoke-Measured @("generate", $modelPath, $longPrompt, "--max-tokens", "4",
+                            "--temperature", "0", "--raw") "generate with a long prompt (KV grows)"
+
 # Steady state, sampled from a process that is still working.
 #
 # This has to be a run that stays alive on its own: a peak counter cannot show
 # that memory was released, so the current value has to be read while the process
 # is up, and an interactive `chat` exits the moment its stdin hits EOF. `bench`
 # loads the model and then decodes a fixed number of tokens, so it is reliably
-# alive during the window without needing any input. The token count is chosen to
-# outlast the window at this model's decode rate.
-# 600 tokens is ~30 s of decoding at this model's rate, so the process is
-  # reliably alive at the settle point regardless of machine speed.
-  $settleTokens = [math]::Max(200, [int]($settleWindowMs / 1000 * 20))
+# alive during the window without needing any input, and the token count is sized
+# to outlast the settle point at this model's decode rate.
+$settleTokens = [math]::Max(200, [int]($settleWindowMs / 1000 * 20))
 $steady = Invoke-Measured @("bench", $modelPath, "--tokens", "$settleTokens",
                             "--prompt", "The capital of France is") "bench, loaded and decoding (settled)" -SettleMilliseconds $settleWindowMs
 
@@ -149,6 +154,7 @@ Write-Host ""
 Write-Host ("  model bytes on disk:                {0,7} MB" -f $modelMB)
 Write-Host ("  inspect peak:                       {0,7} MB" -f $parseOnly.Peak)
 Write-Host ("  generate peak (Model + initial KV): {0,7} MB" -f $loadOnly.Peak)
+Write-Host ("  long-prompt peak (KV grew):         {0,7} MB" -f $growth.Peak)
 if ($steady.SettledMeasured) {
   Write-Host ("  steady state (loaded + decoding):   {0,7} MB" -f $steady.Settled)
 } else {
