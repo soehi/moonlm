@@ -1,0 +1,14 @@
+// The JavaScript-facing entry point to the engine.
+//
+// `pkgtype(kind: "foreign_library")` is what makes `#export_name` legal here and
+// what tells the build to emit a linkable module rather than an executable.
+// Target `js`: on `wasm-gc` the boundary types are GC references JavaScript
+// cannot construct, and no memory is exported, so the browser cannot hand this
+// package a model file. See docs/browser.md for the measurements.
+
+import {
+  "soehi/moonlm/engine",
+  "soehi/moonlm/sampler",
+}
+
+pkgtype(kind: "foreign_library")
