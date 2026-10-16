@@ -34,7 +34,21 @@ globalThis.self = win;
 
 const mod = await import(pathToFileURL(path.resolve(bundlePath)).href);
 
-const buf = new Uint8Array(fs.readFileSync(MODEL));
+// Hand the engine a view over the bytes rather than a copy. `readFileSync`
+// already returns a Buffer; `new Uint8Array(buffer)` would allocate a second
+// full copy of the model, which inflates the harness's own memory report by the
+// file size and measures something other than the engine. A view is only safe
+// when the Buffer owns its whole backing store, so fall back to a copy when it
+// does not. `tools/check_zero_copy.mjs` reports which case a given file is in.
+function modelBytes(file) {
+  const buf = fs.readFileSync(file);
+  if (buf.byteOffset === 0 && buf.buffer.byteLength === buf.length) {
+    return new Uint8Array(buf.buffer);
+  }
+  return new Uint8Array(buf);
+}
+
+const buf = modelBytes(MODEL);
 const t0 = Date.now();
 const handle = mod.moonlm_load(buf, path.basename(MODEL));
 const loadMs = Date.now() - t0;

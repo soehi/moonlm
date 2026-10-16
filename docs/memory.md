@@ -116,6 +116,48 @@ A related measurement subtlety: peak working set is a high-water mark, so freein
 a reference does not lower it for work already done. To see the effect of a
 memory fix, measure the resident set once loading has settled, not only the peak.
 
+## Browser-side memory
+
+`tools/check_js_parity.mjs` reports the Node heap while driving the `js` bundle,
+which covers the browser question as well as the parity check. Model: 138 MB.
+The engine is handed a view over the file bytes, not a copy.
+
+| Phase | heapUsed | external | RSS |
+|---|---|---|---|
+| before load | 4.6 MB | 1.8 MB | 46.5 MB |
+| after load | 69.4 MB | 140 MB | 287.5 MB |
+| after generate | 165.8 MB | 140 MB | 367.3 MB |
+
+Reading it:
+
+- `external` at 140 MB is the model bytes held once, which is the floor for
+  loading a 138 MB model this way. The engine's own structures (tokenizer,
+  matrix descriptors, KV cache) are the 69.4 MB of `heapUsed` after load, and
+  generation adds about 96 MB more.
+- RSS after generate, 367 MB, is the honest ceiling for this workload in Node.
+  It is higher than the native figure (189 MB) because a JavaScript engine
+  carries its own runtime plus a garbage collector, and because RSS counts
+  memory that has been freed but not yet returned to the OS.
+- Node's counters are not Chrome's, and `heapUsed` excludes WebAssembly and
+  external memory, so this table describes one runtime's view rather than a
+  browser guarantee. It is reproducible with the command below, which is the
+  point — a number someone else can re-measure.
+
+```bash
+node tools/check_js_parity.mjs _build/js/release/build/web/web.js <model.gguf> 8 <expected-file>
+```
+
+### A measurement bug this found
+
+The harness originally did `new Uint8Array(fs.readFileSync(path))`. Since
+`readFileSync` already returns a Buffer, that constructor allocates a second full
+copy, and the harness reported 278 MB of `external` memory for a 138 MB model —
+roughly double, with the extra copy belonging to the harness rather than the
+engine. The fix is to view the Buffer's own `ArrayBuffer` when the Buffer owns
+it, and `tools/check_zero_copy.mjs` reports whether a given file is in that case.
+The table above is measured after the fix; the engine's numbers never changed,
+only the harness's accounting of them.
+
 ## What the numbers now support
 
 With all three fixes in, the honest summary is:
