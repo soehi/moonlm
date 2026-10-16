@@ -33,24 +33,66 @@ optimizations described below.
 | Model on disk | 138 MB | 138 MB |
 | `inspect` (parses, builds no Model) | 283 MB | **145 MB** |
 | `generate` (Model + KV cache) | 663 MB | **189 MB** |
-| llama.cpp, same model (for reference) | ~150–200 MB | ~150–200 MB |
+| `chat`, settled (steady state) | not measured | **156 MB** |
 
-So the process now needs about **1.37x the model size**, against roughly 1.1–1.4x
-for llama.cpp. Before the fixes it was 4.8x, which is what put a few-hundred-MB
-device out of reach; that constraint is now gone.
+So the process now needs about **1.37x the model size** peak, and 1.13x once
+loading has settled. Before the fixes it was 4.8x, which is what put a
+few-hundred-MB device out of reach; that constraint is now gone.
 
-### The performance cost, stated plainly
+### Against llama.cpp, measured
 
-Sharing the file buffer across tensors cost some decode speed: **18.4 → 17.5
-tok/s** (native, 64 tokens, five samples in the 17.2–17.6 range). The likely
-cause is cache locality — a tensor's rows now sit in one large shared buffer
-rather than in a compact per-tensor allocation, so the matvec inner loop touches
-more distinct cache lines.
+An earlier revision of this file compared against "roughly 150–200 MB" for
+llama.cpp without having measured it. It has now been measured: llama.cpp build
+0.7.0-dev, `llama-server` with `--ctx-size 2048 -t 4`, same model, resident set
+read from the OS after the model loaded.
 
-That is a deliberate trade: 663 MB → 189 MB for about 5% of throughput, on a
-project whose stated position is portability and self-containment rather than
-peak speed. It is recorded here because a 5% regression that goes unmentioned is
-how a benchmark table stops being trustworthy.
+| | moonlm | llama-server |
+|---|---|---|
+| settled (working set) | **156 MB** | 169 MB |
+| peak | **189 MB** | 367 MB |
+
+The settled figures are close, which is the expected result: both hold one copy
+of a 138 MB model of weights plus a working context. The peak differs by 2x
+because the server allocates more transiently during startup — it grew a
+threadpool, four slots and a 2048-position cache up front.
+
+Note what is and is not being compared. These are two programs with different
+jobs: `moonlm generate` answers one prompt and exits, `llama-server` stays up
+serving HTTP. The settled row is the fair comparison of "holding a model"; the
+peak row says more about how each tool amortizes startup than about efficiency,
+and llama-server is entitled to allocate for a workload it cannot see yet.
+
+### The performance cost: measured, and it is not there
+
+An earlier revision of this file claimed sharing the file buffer cost 5% of
+decode speed (18.4 → 17.5 tok/s). That measurement did not reproduce, and the
+claim has been removed rather than left standing.
+
+Re-measured with interleaved A/B: two binaries (before the fixes, and after all
+three) alternated within one loop, ten rounds each, so machine drift affects both
+sides equally instead of landing on whichever revision happened to run during a
+quiet moment.
+
+| | median | mean | stdev |
+|---|---|---|---|
+| after the three fixes | 19.017 tok/s | 19.042 | 0.186 |
+| before | 19.000 tok/s | 19.002 | 0.182 |
+
+Median difference **+0.09%**, mean **+0.21%** — no regression, with both
+distributions at the same spread.
+
+The likely origin of the earlier figure: it was taken around 15:36, while a
+llama.cpp build was running in the background at `-j 8` on the same machine, and
+a JavaScript benchmark loop was also running. A single-sample reading under that
+load is not a measurement of the code. The lesson is the same one this file
+already records about `tasklist` sampling: on a shared, noisy machine, a
+number has to be taken under conditions that can be stated, and preferably
+interleaved against its comparison rather than measured once on each side.
+
+So the memory fixes are not a trade. They remove 474 MB of peak residency at no
+measurable throughput cost, which is the outcome the code structure predicted:
+the kernels were already reading through `(data, row_offset)`, and the KV growth
+path allocates only when a prompt exceeds the current capacity.
 
 ## Where the memory went
 
@@ -164,10 +206,10 @@ With all three fixes in, the honest summary is:
 
 - **Deployment size is a clear strength**: 473 KB native executable with no
   private DLLs, and a 33 KB brotli-compressed engine for the browser.
-- **Memory is in the same range as llama.cpp** (1.37x the model versus
-  1.1–1.4x), where before it was 4.8x and effectively ruled out smaller devices.
-- **Throughput is slightly below where it was** (17.5 versus 18.4 tok/s), which
-  is the price of sharing the file buffer and is stated rather than omitted.
+- **Memory is in the same range as llama.cpp**, and better on peak: 156 MB settled
+  against 169 MB, 189 MB peak against 367 MB, for the same 138 MB model.
+- **Throughput did not regress**: 19.02 tok/s after against 19.00 before, from an
+  interleaved ten-round comparison.
 
 ## Verifying a memory change does not break behaviour
 

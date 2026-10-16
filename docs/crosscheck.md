@@ -29,11 +29,29 @@ rather than the chaos.
 
 ## Reproducing
 
-Build the reference and start it on loopback (any recent llama.cpp build):
+The reference is a `llama-server` on loopback. If none is installed, one can be
+built from source; this is the recipe that worked here, and it needs only CMake
+and a C++ toolchain (no CUDA, no network at build time):
 
 ```bash
-llama-server -m SmolLM2-135M-Instruct-Q8_0.gguf --port 18080
+curl -sL -o llama.zip https://codeload.github.com/ggml-org/llama.cpp/zip/refs/heads/master
+unzip -q llama.zip && cd llama.cpp-master
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DLLAMA_CURL=OFF -DGGML_NATIVE=ON \
+      -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=ON
+cmake --build build --config Release -j 8 --target llama-server
 ```
+
+Then start it:
+
+```bash
+build/bin/Release/llama-server.exe -m SmolLM2-135M-Instruct-Q8_0.gguf --port 18080
+```
+
+Two notes on building it, from doing it: the download is ~40 MB and a truncated
+copy fails as a zip error rather than a download error, so check the size before
+extracting; and building at `-j 8` will slow any benchmark running on the same
+machine, which matters if you are measuring throughput at the same time (see
+`docs/memory.md` for a case where exactly that produced a bogus number).
 
 Then, from the repository root (the model path must be Windows-native, because
 the CLI opens it through a C stub):
@@ -51,7 +69,12 @@ the case that would indicate a real bug.
 ## Results
 
 Model: `SmolLM2-135M-Instruct-Q8_0.gguf`, 30 layers, n_embd 576, 9/3 GQA.
-Reference: llama.cpp build 11675. Commit when measured: see `git log`.
+
+Reference: llama.cpp build 11675 for the numbers below. Re-run against a
+locally-built reference (build 0.7.0-dev, MSVC 19.44, `--ctx-size 2048 -t 4`)
+after the memory work in `docs/memory.md`, and the same 280/288 reproduced — so
+the figure is not tied to one build of the reference.
+
 
 ### Argmax agreement (teacher forcing), 48 steps per prompt
 

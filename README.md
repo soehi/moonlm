@@ -167,4 +167,4 @@ loopback 上起一个 `llama-server`（见 [docs/crosscheck.md](docs/crosscheck.
 - [docs/crosscheck.md](docs/crosscheck.md) — 与 llama.cpp 的逐位置对拍方法与数据
 - [docs/performance.md](docs/performance.md) — 性能实测、瓶颈分析与已否决的优化路径
 - [docs/browser.md](docs/browser.md) — 浏览器目标选择依据、实测数据与零网络验证
-- [docs/memory.md](docs/memory.md) — 部署体积与内存实测：体积是优势（473 KB exe / 33 KB brotli），内存是待修的弱点
+- [docs/memory.md](docs/memory.md) — 部署体积与内存实测：体积 473 KB exe / 33 KB brotli，内存已从 663 MB 降到 189 MB（steady state 156 MB，同模型下低于 llama-server 的 169 MB）
