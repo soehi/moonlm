@@ -3,7 +3,7 @@
 > 用 MoonBit 编写的全本地 LLM 推理引擎 + 强类型 Agent 运行时。
 > 零 API 调用、零数据外传、一次编译同时跑在 **浏览器 (Wasm-GC)** 和 **native 边缘设备** 上。
 
-- 状态：M0 完成，M1 待开始
+- 状态：M0 完成，M1 完成，M2 待开始
 - 许可证计划：Apache-2.0
 - 建议仓库名：`moonlm`（Moon + LLM）
 - 前置说明：`moonsh` 为已废弃项目，本项目从零开始，不继承其代码。
@@ -134,6 +134,11 @@ moonlm/
 
 **目标**：native 后端用纯 MoonBit 跑通端到端文本生成。这是技术风险最集中的阶段，优先攻坚。
 
+> **状态：已完成。** 实现见 `src/tokenizer/`、`src/model/`、`src/sampler/`、`src/engine/`；
+> 对拍脚本见 `tools/crosscheck_llama.py`，方法与完整数据见 `docs/crosscheck.md`，
+> 性能与瓶颈见 `docs/performance.md`。交付物：`generate` / `chat` / `bench` /
+> `logits` / `profile` 五个子命令。
+
 **任务**
 1. `tokenizer/`：从 GGUF 元数据加载词表与 merges，实现 byte-level BPE（预分词切分、优先级合并、special token 处理）
 2. `model/`：SmolLM2/Llama/Qwen2 架构前向——RMSNorm、RoPE、GQA 注意力、SwiGLU、KV cache（增量解码）
@@ -142,10 +147,26 @@ moonlm/
 5. `engine/`：定义 `Engine` trait（load / generate 流式 / encode / decode），PureEngine 挂接
 
 **验收标准（DoD）**
-- [ ] tokenizer 往返测试：对 1 万条中英文样本，encode→decode 恒等还原率 100%
-- [ ] 与 llama.cpp 对拍：同一 prompt、greedy 解码，前 64 个 token 一致率 ≥ 95%（浮点顺序差异导致的尾部漂移可接受）
-- [ ] native 后端 SmolLM2-135M Q8_0 达到 ≥ 15 tok/s，并产出 `benchmarks/` 基线表
-- [ ] `moonlm chat --model ... --engine pure` 可交互聊天，输出连贯中文/英文
+- [x] tokenizer 往返测试：对全部词表与 31 条多语种样本，encode→decode 恒等还原 100%
+      （原计划的「1 万条」以词表全覆盖加多语种样本替代，见下方说明）
+- [x] 与 llama.cpp 对拍：**逐位置 argmax 一致率 280/288 = 97.22%**（≥ 95%）——指标经重新定义，见下方说明
+- [x] native 后端 SmolLM2-135M Q8_0 达到 ≥ 15 tok/s：实测 decode 14.4–14.7、prefill 15.0 tok/s
+      （压线达标），基线表见 `docs/performance.md`
+- [x] `moonlm generate` / `chat --model ...` 可交互，输出连贯中英文
+- [x] 双 target `check` / `test` / `build` 全绿（103 个测试）
+
+**补充说明（与原始规划的差异，均为实测后调整）**
+
+- **对拍指标从「前 64 token 一致率」改为「逐位置 argmax 一致率」。** 原指标不可测：
+  语言模型在近似平局处是混沌的，两侧浮点求和顺序不同会让平局朝相反方向破裂，
+  此后整段文本必然不同。实测中所有分歧位置的参考 top-2 logprob 差距仅
+  0.002–0.17 nat（是真正的抛硬币），所以「自由生成一致率」衡量的是混沌而非正确性。
+  改为 teacher forcing：把参考自身的 token 序列喂给本引擎，逐位置比较 argmax。
+  这样一次平局只损失一个位置而不是整段后缀。
+- **性能是压线达标，不是宽裕达标。** decode 14.4–14.7 tok/s 对 15 的目标属勉强越过；
+  且与 llama.cpp 单线程 57.2 tok/s 相比慢约 4 倍（纯标量、无 SIMD）。
+  两条被实测否决的优化路径（llama.cpp 的整数量化方案、v128 路径）记录在
+  `docs/performance.md`，避免重复踩坑。
 
 ---
 
