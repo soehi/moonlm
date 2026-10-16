@@ -46,18 +46,45 @@ float copy of the tensor. Three things limit the rate:
 | Attempt | Result | Verdict |
 |---|---|---|
 | Remove inner-loop bounds checks via `#intrinsic("%fixedarray.unsafe_get")` | 1490 → 2203 MMACs/s (2.5 → 14.7 tok/s end to end) | **Kept.** The largest single win; `FixedArray` has no public unchecked read, so the intrinsic is declared locally. |
-| Same for the weight bytes: `Bytes::unsafe_get` | browser 1.83 → 6.33 tok/s (3.5x); native 14.4 → 18.4 tok/s | **Kept.** Found by reading the generated JS: `Bytes` indexing emits a `$bound_check` call, four per inner iteration. |
-| Accumulate in `Double` instead of `Float` | browser 0.7 → 1.83 tok/s on its own; part of the 9x total | **Kept.** On the `js` backend a `Float` op compiles to a `Math.fround` call; measured 6x slower per op than f64. No effect on native, which has real f32 registers. |
-| Sign-extension lookup as `FixedArray` read through `uget` instead of `Array` | 16% of that loop | **Kept.** An `Array` index compiles to a helper call in the `js` backend. |
+| Same for the weight bytes: `Bytes::unsafe_get` | browser 1.92 → 3.40 tok/s (1.8x, isolated); native 14.4 → 18.4 tok/s | **Kept.** Found by reading the generated JS: `Bytes` indexing emits a `$bound_check` call, four per inner iteration. |
+| Accumulate in `Double` instead of `Float` | browser 1.92 → 2.50 tok/s (1.3x, isolated); both changes together 1.92 → 7.56 (3.9x) | **Kept.** On the `js` backend a `Float` op compiles to a `Math.fround` call; measured 6x slower per op than f64 in isolation. Smaller than expected in situ. |
+| Sign-extension lookup as `FixedArray` read through `uget` instead of `Array` | 16% of that loop, measured on a microbenchmark | **Kept.** An `Array` index compiles to a helper call in the `js` backend. |
 | Fuse SwiGLU gate/up into one pass, float lookup table | part of 2.5 → 9.35 tok/s | **Kept.** |
 | llama.cpp's q8_0×q8_0 integer scheme (quantize activations to int8, accumulate in int32) | 787 MMACs/s vs 1009 for the float path | **Rejected.** Slower here: the scalar version pays an extra byte→int conversion per element and gains nothing without SIMD, which is where llama.cpp's version wins. |
 | `v128` SIMD path over `FixedArray[Byte]` | 35 MMACs/s vs 1264 (36x *slower*) | **Rejected.** `v128_load` on that type did not lower to a real vector load in this native build, and the path also required a 143 MB shadow copy of the weights. |
 
 The rejected paths are recorded because they are the obvious things to try next,
 and knowing they were measured — not merely assumed to be slow — saves repeating
-the experiment. The three `js`-specific wins were all found the same way: by
-reading the JavaScript the compiler emitted, rather than reasoning about the
-MoonBit source.
+the experiment.
+
+### The isolated numbers are smaller than the combined one, and why
+
+The two `js` kernel changes were measured three ways in Node with
+`tools/bench_js_kernel.mjs` — one bundle at a time, 16 tokens per call, best of
+3, same model:
+
+| Kernel | decode tok/s | vs baseline |
+|---|---|---|
+| baseline: f32 accumulator, checked byte reads | 1.92 | — |
+| f64 accumulator only, byte reads still checked | 2.50 | 1.30x |
+| `unsafe_get` byte reads only, f32 accumulator | 3.40 | 1.77x |
+| both | 7.56 | **3.94x** |
+
+1.30 × 1.77 = 2.3, not 3.94, so the two changes interact rather than simply
+adding. The likely reason is that removing the `$bound_check` calls lets the JS
+engine keep the loop's values in registers, which is only possible once the
+accumulator is also a plain JavaScript number rather than a `Math.fround`
+boundary. The combined figure is the one that was measured directly and is what
+the docs quote; the isolated figures are here to show how the work was
+understood, not as an additive model.
+
+An earlier version of this table claimed "0.7 → 1.83" for the f64 change and
+"1.83 → 6.33 (3.5x)" for the byte reads. Those numbers came from measurements
+taken under **different conditions** (8 tokens driven through the demo UI, which
+amortises fixed per-call cost differently, versus 16 tokens through the bench
+hook), so the differences mixed in a measurement artefact. They have been
+replaced by the controlled figures above. The headline claim in
+`docs/browser.md` was 0.7 → 6.33 (9x) and is now 1.92 → 7.56 (3.9x).
 
 ## Why the M1 target was 15 tok/s, and where it stands
 

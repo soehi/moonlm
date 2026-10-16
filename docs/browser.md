@@ -52,24 +52,48 @@ Browser: the in-app browser (Chromium), model `SmolLM2-135M-Instruct-Q8_0.gguf`
 | **Decode** | **6.3 tok/s** |
 | Bundle size (`web.js`) | 306 KB |
 
-Before the kernel work in this stage it was **0.7 tok/s**: the target was ≥3, so
-it missed by 4×. Getting there took two fixes, both found by reading the
-generated JavaScript rather than the MoonBit source:
+Measured in Node instead (same V8 engine, `tools/bench_js_kernel.mjs`, 16 tokens,
+best of 3), the same build gives 7.56 tok/s decode. The two differ because the
+browser run goes through the page's UI path and the Node run does not; neither is
+wrong, they answer slightly different questions. The Node figure is the one used
+for the before/after comparison below, because it can be reproduced one bundle at
+a time under identical conditions.
+
+The target was ≥3 tok/s, so the browser meets it — but the honest framing of how
+it got there changed after re-measuring (see the correction note below).
+
+## The kernel work, re-measured
+
+The two `js`-specific fixes, each measured in isolation in Node:
+
+| Kernel | decode tok/s |
+|---|---|
+| baseline: f32 accumulator, checked byte reads | 1.92 |
+| f64 accumulator only | 2.50 |
+| `unsafe_get` byte reads only | 3.40 |
+| both (shipped) | **7.56** |
 
 1. **Accumulate in `Double`.** On the `js` backend every `Float` operation
-   compiles to a `Math.fround` call, so the f32 accumulator chain paid a
-   function call per multiply-add — measured 6× slower per operation than f64.
-   Inputs and result stay `Float`, so this changes only the rounding of the
-   running sum, not what the model computes.
-2. **Read weight bytes unchecked.** `Bytes` indexing emits a `$bound_check`
-   call, four per inner-loop iteration. The engine's existing `uget` intrinsic
-   covers arrays but not bytes; `Bytes::unsafe_get` covers the rest.
+   compiles to a `Math.fround` call, so the f32 accumulator chain paid a function
+   call per multiply-add. In a microbenchmark f64 was 6× faster per operation; in
+   the real kernel it is worth 1.3×, which is a smaller effect than the
+   microbenchmark suggested. Inputs and result stay `Float`, so this changes only
+   the rounding of the running sum, not what the model computes.
+2. **Read weight bytes unchecked.** `Bytes` indexing emits a `$bound_check` call,
+   four per inner-loop iteration. `Bytes::unsafe_get` removes them.
 
-A third change — moving the sign-extension lookup from `Array` to `FixedArray`
-so it can be read through the inlining `uget` — was worth another 16%: an
-`Array` index compiles to a helper call.
+The two interact rather than adding (1.30 × 1.77 = 2.3, against a measured 3.94),
+probably because removing the bounds checks only lets the JS engine keep values
+in registers once the accumulator is also a plain number. The combined figure is
+the measured one.
 
-Both changes also helped native: decode went from 14.4 to **18.4 tok/s**.
+Both also helped native: decode 14.4 → 18.4 tok/s.
+
+**Correction.** An earlier version of this document said "0.7 → 6.33 tok/s (9x)".
+That compared an 8-token run through the demo UI against a 16-token run through
+the bench hook, so it mixed a real speedup with a change in measurement
+conditions. The controlled figure is 1.92 → 7.56 (3.9×). The conclusion — the
+≥3 tok/s target is met — does not change.
 
 What did *not* help, measured and rejected: removing bounds checks on the `x`
 array (already done via `uget`), and `v128` (see `docs/performance.md`).

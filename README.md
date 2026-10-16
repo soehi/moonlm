@@ -73,11 +73,15 @@ GC 数组引用，JavaScript 无法构造，且模块不导出内存，模型字
 `Bytes` 就是 `Uint8Array`。MoonBit 官方 web 模板同样声明 `"preferred-target": "js"`。
 引擎各包仍双后端可构建可测试，只有这个边界包是 `js` 专属。
 
-**性能靠实测而非猜测修回来**：浏览器初次实测只有 0.7 tok/s（差目标 4 倍）。
-两个修复都是读**生成的 JavaScript** 找到的——`Float` 运算在该后端编译为
-`Math.fround` 调用（改 f64 累加，实测快 6 倍）；`Bytes` 索引生成 `$bound_check`
-调用（改 `Bytes::unsafe_get`）。两项对 native 也有增益（14.4 → 18.4 tok/s），
-且改动后 llama.cpp 对拍与跨后端一致性均不变。
+**性能靠实测而非猜测修回来**：两个修复都是读**生成的 JavaScript** 找到的——
+`Float` 运算在该后端编译为 `Math.fround` 调用（改 f64 累加）；`Bytes` 索引生成
+`$bound_check` 调用（改 `Bytes::unsafe_get`）。两项对 native 也有增益
+（14.4 → 18.4 tok/s），且改动后 llama.cpp 对拍与跨后端一致性均不变。
+
+> **数字更正**：早期文档写「0.7 → 6.33 tok/s（9 倍）」。那比较的是 UI 路径下
+> 8 token 与 bench 路径下 16 token 两次测量，混入了测量条件差异。同一条件下
+> 用 `tools/bench_js_kernel.mjs` 逐 bundle 重测的受控结果是 **1.92 → 7.56
+> tok/s（3.9 倍）**。结论（达标 ≥3 tok/s）不变。
 
 后续阶段（Agent 运行时）见 [PLAN.md](PLAN.md)。
 
