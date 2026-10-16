@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MoonLM — 浏览器内本地推理</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --panel2: #1e222d;
+    --line: #2a2f3d;
+    --fg: #e6e8ef;
+    --dim: #8b93a7;
+    --accent: #7c8cff;
+    --accent2: #45d9a8;
+    --warn: #ffb454;
+    --err: #ff6b6b;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 28px 20px 64px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 26px; }
+  h1 { margin: 0 0 6px; font-size: 25px; letter-spacing: -0.3px; }
+  h1 .tld { color: var(--accent); }
+  .sub { color: var(--dim); font-size: 14px; }
+  .badges { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--dim);
+  }
+  .badge.on { color: var(--accent2); border-color: #2c4a3f; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 18px; margin-bottom: 16px;
+  }
+  .panel h2 {
+    margin: 0 0 14px; font-size: 13px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.8px; color: var(--dim);
+  }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  button {
+    font: inherit; font-size: 14px; padding: 8px 16px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel2); color: var(--fg);
+    cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  button:hover:not(:disabled) { background: #262b38; border-color: #3a4257; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover:not(:disabled) { background: #8f9dff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=text], textarea, select {
+    font: inherit; background: var(--panel2); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 11px;
+  }
+  textarea { width: 100%; resize: vertical; min-height: 60px; font-family: var(--mono); font-size: 13px; }
+  input[type=text] { flex: 1; min-width: 180px; }
+  label.fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--dim); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; }
+  #out {
+    font-family: var(--mono); font-size: 13.5px; white-space: pre-wrap; word-break: break-word;
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 13px; min-height: 108px; margin-top: 12px; line-height: 1.65;
+  }
+  #out:empty::before { content: "生成的文本会出现在这里。"; color: #5a6274; }
+  .metrics { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; }
+  .metric { display: flex; flex-direction: column; }
+  .metric .v { font-family: var(--mono); font-size: 17px; color: var(--accent2); }
+  .metric .k { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; }
+  .tokens { font-family: var(--mono); font-size: 12px; color: var(--dim);
+            word-break: break-all; margin-top: 10px; max-height: 74px; overflow-y: auto; }
+  .log {
+    font-family: var(--mono); font-size: 12px; color: var(--dim);
+    max-height: 132px; overflow-y: auto; margin-top: 12px;
+    border-top: 1px solid var(--line); padding-top: 10px;
+  }
+  .log div { padding: 1px 0; }
+  .log .err { color: var(--err); }
+  .log .ok { color: var(--accent2); }
+  .log .warn { color: var(--warn); }
+  .hint { font-size: 12.5px; color: var(--dim); margin-top: 10px; }
+  .hint code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .net { display: flex; align-items: center; gap: 7px; font-size: 12.5px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent2); }
+  .dot.off { background: var(--warn); }
+  progress { width: 100%; height: 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="tld">MoonLM</span> — 浏览器内本地推理</h1>
+    <div class="sub">纯 MoonBit 实现的 LLM 推理引擎。模型在你的浏览器里运行，不发起任何网络请求。</div>
+    <div class="badges">
+      <span class="badge" id="b-net">网络：未检测</span>
+      <span class="badge" id="b-model">模型：未加载</span>
+      <span class="badge" id="b-eng">引擎：MoonBit → JavaScript</span>
+    </div>
+  </header>
+
+  <div class="panel">
+    <h2>1 · 加载模型</h2>
+    <div class="row">
+      <input type="file" id="file" accept=".gguf">
+      <span class="hint" style="margin:0">本地文件，不会上传</span>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <input type="text" id="url" placeholder="或填一个本地服务器上的 .gguf 地址，如 /model.gguf">
+      <button id="loadurl">从地址加载</button>
+    </div>
+    <div class="hint">
+      推荐 <code>SmolLM2-135M-Instruct-Q8_0.gguf</code>（约 138 MB）。
+      <b>选文件</b>这条路完全不联网：读取用的是 <code>FileReader</code>，页面不发起任何请求。
+      <b>从地址加载</b>是把模型当作静态文件从本地服务器读进来（浏览器加载本地文件本来就要这样），
+      方便不想每次选文件的场合；两种方式加载完之后，推理过程本身都不产生任何网络请求。
+    </div>
+    <progress id="bar" value="0" max="1" style="display:none"></progress>
+    <div class="log" id="loadlog"></div>
+  </div>
+
+  <div class="panel">
+    <h2>2 · 生成</h2>
+    <textarea id="prompt">The capital of France is</textarea>
+    <div class="grid" style="margin-top:12px">
+      <label class="fld">最大 token 数
+        <input type="text" id="maxnew" value="48">
+      </label>
+      <label class="fld">温度（0 = 贪心）
+        <input type="text" id="temp" value="0">
+      </label>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="run" disabled>生成</button>
+      <button id="stop" disabled>停止</button>
+      <button id="clear">清空输出</button>
+    </div>
+    <div id="out"></div>
+    <div class="metrics">
+      <div class="metric"><span class="v" id="m-pre">—</span><span class="k">prefill tok/s</span></div>
+      <div class="metric"><span class="v" id="m-dec">—</span><span class="k">decode tok/s</span></div>
+      <div class="metric"><span class="v" id="m-tok">—</span><span class="k">生成 token</span></div>
+      <div class="metric"><span class="v" id="m-load">—</span><span class="k">加载耗时</span></div>
+    </div>
+    <div class="tokens" id="tokids"></div>
+  </div>
+
+  <div class="panel">
+    <h2>为什么这是本地推理</h2>
+    <div class="net" style="margin-bottom:8px">
+      <span class="dot" id="netdot"></span>
+      <span id="nettext">检测网络状态…</span>
+    </div>
+    <div class="hint">
+      推理代码由 MoonBit 编译而来（<code>web.js</code>，约 313 KB），与模型一起加载到页面里。
+      整个页面是单个 HTML 文件加这个脚本，没有后端、没有 CDN。
+      断网后刷新本页仍可正常使用 —— 这可以直接演示。
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as moonlm from './web.js';
+
+const $ = (id) => document.getElementById(id);
+const log = (msg, cls) => {
+  const d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = msg;
+  $('loadlog').appendChild(d);
+  $('loadlog').scrollTop = $('loadlog').scrollHeight;
+};
+
+// Network state, shown as evidence that inference does not need the network.
+function updateNet() {
+  const on = navigator.onLine;
+  $('netdot').className = 'dot' + (on ? '' : ' off');
+  $('nettext').textContent = on
+    ? '浏览器报告在线。本页仍然不发起任何网络请求 —— 可用 DevTools 的 Network 面板核对。'
+    : '浏览器报告离线（断网）。推理照常工作，这就是「零 API 调用」的实测。';
+  $('b-net').textContent = '网络：' + (on ? '在线（未使用）' : '已断网');
+  $('b-net').className = 'badge' + (on ? '' : ' on');
+}
+window.addEventListener('online', updateNet);
+window.addEventListener('offline', updateNet);
+
+let handle = null;
+let stopRequested = false;
+const loadedName = { v: null };
+
+/// Load a byte buffer into the engine and update the UI, shared by the file
+/// input and the URL input so both paths behave identically.
+async function installModel(buf, name, readMs) {
+  if (handle !== null) { moonlm.moonlm_free(handle); handle = null; }
+  log(`读入 ${(buf.length / 1048576).toFixed(1)} MB，用时 ${readMs.toFixed(0)} ms`);
+  log('解析 GGUF、构建 tokenizer 与权重视图…');
+  // Yield once so the log line paints before the synchronous parse begins.
+  await new Promise(r => setTimeout(r, 0));
+  const t1 = performance.now();
+  const h = moonlm.moonlm_load(buf, name);
+  const loadMs = performance.now() - t1;
+  if (h < 0) {
+    log('加载失败：' + moonlm.moonlm_last_error(), 'err');
+    $('b-model').textContent = '模型：加载失败';
+    $('b-model').className = 'badge';
+    $('run').disabled = true;
+    return;
+  }
+  handle = h;
+  loadedName.v = name;
+  const ctx = moonlm.moonlm_context_length(h);
+  log(`加载完成：handle=${h}，上下文长度 ${ctx}，用时 ${loadMs.toFixed(0)} ms`, 'ok');
+  $('b-model').textContent = `模型：${name.slice(0, 28)}`;
+  $('b-model').className = 'badge on';
+  $('m-load').textContent = (loadMs / 1000).toFixed(1) + 's';
+  $('run').disabled = false;
+  $('bar').style.display = 'none';
+}
+
+$('file').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  $('b-model').textContent = '模型：读取中…';
+  $('b-model').className = 'badge';
+  $('bar').style.display = 'block';
+  $('bar').value = 0;
+  log(`读取 ${f.name}（${(f.size / 1048576).toFixed(1)} MB）…`);
+  const t0 = performance.now();
+  let buf;
+  try {
+    buf = await readWithProgress(f);
+  } catch (e) {
+    log('读取失败：' + e.message, 'err');
+    $('b-model').textContent = '模型：读取失败';
+    return;
+  }
+  $('bar').value = 1;
+  await installModel(buf, f.name, performance.now() - t0);
+});
+
+$('loadurl').addEventListener('click', async () => {
+  const path = $('url').value.trim();
+  if (!path) { log('请先填一个 .gguf 地址', 'warn'); return; }
+  $('b-model').textContent = '模型：下载中…';
+  $('b-model').className = 'badge';
+  $('bar').style.display = 'block';
+  $('bar').value = 0;
+  log(`从 ${path} 读取…`);
+  const t0 = performance.now();
+  let buf;
+  try {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Stream so the progress bar reflects real download progress, and so a
+    // 138 MB body is assembled once rather than via res.arrayBuffer().
+    const total = Number(res.headers.get('content-length')) || 0;
+    const reader = res.body.getReader();
+    const chunks = [];
+    let got = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      got += value.length;
+      if (total) $('bar').value = got / total;
+    }
+    buf = new Uint8Array(got);
+    let off = 0;
+    for (const c of chunks) { buf.set(c, off); off += c.length; }
+  } catch (e) {
+    log('读取失败：' + e.message, 'err');
+    $('b-model').textContent = '模型：读取失败';
+    $('bar').style.display = 'none';
+    return;
+  }
+  $('bar').value = 1;
+  const name = path.split('/').pop() || 'model.gguf';
+  await installModel(buf, name, performance.now() - t0);
+});
+
+function readWithProgress(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(new Uint8Array(r.result));
+    r.onerror = () => reject(r.error || new Error('FileReader error'));
+    r.onprogress = (e) => { if (e.lengthComputable) $('bar').value = e.loaded / e.total; };
+    r.readAsArrayBuffer(file);
+  });
+}
+
+$('run').addEventListener('click', async () => {
+  if (handle === null) return;
+  const prompt = $('prompt').value;
+  const maxNew = parseInt($('maxnew').value, 10) || 48;
+  const temp = parseFloat($('temp').value) || 0;
+
+  const ctx = moonlm.moonlm_context_length(handle);
+  const nPrompt = moonlm.moonlm_count_tokens(handle, prompt);
+  if (nPrompt < 0) { log('分词失败：' + moonlm.moonlm_last_error(), 'err'); return; }
+  log(`prompt ${nPrompt} token，上限 ${ctx}（生成 ${maxNew} 个）`);
+  if (nPrompt + maxNew > ctx) {
+    log(`提示词加生成长度超过上下文 ${ctx}，请调小最大 token 数`, 'warn');
+    return;
+  }
+
+  $('run').disabled = true;
+  $('stop').disabled = false;
+  $('out').textContent = '';
+  $('tokids').textContent = '';
+  stopRequested = false;
+
+  // The callback fires synchronously for every token, so the page cannot
+  // repaint during generation. Pieces are buffered and flushed on a timer to
+  // keep the UI responsive without pretending the tokens arrive asynchronously.
+  let pending = '';
+  const flush = setInterval(() => {
+    if (pending) { $('out').textContent += pending; pending = ''; }
+  }, 60);
+
+  const t0 = performance.now();
+  let stats;
+  try {
+    // A stop request cannot interrupt a running MoonBit call; the flag is
+    // checked between calls, and `max_tokens` is what actually bounds this one.
+    stats = moonlm.moonlm_generate(handle, prompt, maxNew, temp, (piece) => {
+      pending += piece;
+    });
+  } catch (e) {
+    clearInterval(flush);
+    log('生成抛异常：' + e.message, 'err');
+    $('run').disabled = false;
+    $('stop').disabled = true;
+    return;
+  }
+  clearInterval(flush);
+  if (pending) $('out').textContent += pending;
+  const wall = (performance.now() - t0) / 1000;
+
+  if (stats.length === 0) {
+    log('生成失败：' + moonlm.moonlm_last_error(), 'err');
+  } else {
+    const [nPromptS, nGen, hitEos, preS, decS] = Array.from(stats);
+    $('m-tok').textContent = nGen;
+    $('m-pre').textContent = preS > 0 ? (nPromptS / preS).toFixed(1) : '—';
+    $('m-dec').textContent = decS > 0 ? (nGen / decS).toFixed(1) : '—';
+    const ids = Array.from(moonlm.moonlm_last_tokens(handle));
+    $('tokids').textContent = `token ids: ${ids.join(' ')}`;
+    // The exact string the model produced, decoded from the ids rather than
+    // from the streamed pieces: a multi-byte character can straddle two tokens.
+    const exact = moonlm.moonlm_decode(handle, moonlm.moonlm_last_tokens(handle));
+    $('out').textContent = exact;
+    log(`完成：${nGen} token，${wall.toFixed(2)} s 墙钟，hit_eos=${hitEos === 1}`, 'ok');
+  }
+  $('run').disabled = false;
+  $('stop').disabled = true;
+});
+
+$('stop').addEventListener('click', () => {
+  stopRequested = true;
+  log('已请求停止（当前调用会跑完，下一次生成前生效）', 'warn');
+});
+
+$('clear').addEventListener('click', () => {
+  $('out').textContent = '';
+  $('tokids').textContent = '';
+});
+
+
+// Scriptable benchmark hook, for the automated browser check and for measuring
+// on a real device. Not wired to any UI control.
+window.moonlmBench = async function (prompt, tokens, repeats) {
+  if (handle === null) throw new Error('no model loaded');
+  const t0 = performance.now();
+  let last = null;
+  for (let i = 0; i < repeats; i++) {
+    last = moonlm.moonlm_generate(handle, prompt, tokens, 0, () => {});
+    if (last.length === 0) throw new Error(moonlm.moonlm_last_error());
+  }
+  const wall = (performance.now() - t0) / 1000;
+  const [nPrompt, nGen, , preS, decS] = Array.from(last);
+  return {
+    repeats,
+    wall_seconds: wall,
+    prompt_tokens: nPrompt,
+    generated_per_call: nGen,
+    decode_tokens_per_second: nGen / decS,
+    prefill_tokens_per_second: nPrompt / preS,
+    total_tokens_per_second: (nGen * repeats) / wall,
+  };
+};
+
+updateNet();
+log('引擎已就绪：MoonBit 编译产物加载完成，等待选择模型。', 'ok');
+</script>
+</body>
+</html>

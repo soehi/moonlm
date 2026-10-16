@@ -383,12 +383,21 @@ let sbyte_table : Array[Int] = {
 }
 
 ///|
-/// byte value -> signed int8 value as a `Float`, so the q8_0 inner loop needs
-/// neither a branch nor an integer-to-float conversion per weight.
-let sbyte_float_table : Array[Float] = {
-  let t : Array[Float] = Array::make(256, 0.0)
+/// byte value -> signed int8 value as a `Double`, for the quantized kernels.
+///
+/// A table rather than a branch, because sign-extending a byte costs a compare
+/// and a select per element — 28M extra ops per token in the LM head alone.
+///
+/// `FixedArray` rather than `Array` so the lookup goes through `uget`: an
+/// `Array` index compiles to a helper call in the `js` backend, which measured
+/// 16% of this loop's time, while `uget` inlines. `Double` rather than `Float`
+/// because on that backend every `Float` operation is a `Math.fround` call; see
+/// the note on `dot_q8_0`. `Bytes` bounds checks, by contrast, are elided by
+/// the JS engine and are not worth removing.
+let sbyte_double_table : FixedArray[Double] = {
+  let t : FixedArray[Double] = FixedArray::make(256, 0.0)
   for i = 0; i < 256; i = i + 1 {
-    t[i] = Float::from_int(if i >= 128 { i - 256 } else { i })
+    t[i] = Double::from_int(if i >= 128 { i - 256 } else { i })
   }
   t
 }
@@ -461,6 +470,15 @@ fn dot_q4_0(
 
 ///|
 /// q8_0: fp16 scale + 32 signed bytes.
+///
+/// The accumulation is done in `Double` even though the inputs and the result
+/// are `Float`. On the `js` backend a `Float` operation compiles to a
+/// `Math.fround` call, so an f32 accumulator chain pays a function call per
+/// multiply-add; f64 arithmetic maps to plain JavaScript numbers and measured
+/// about 6x faster per operation. `wasm-gc` and `native` have real f32
+/// registers, so this costs nothing there and does not change the arithmetic
+/// the model performs — only the precision of the running sum, which is a
+/// rounding detail rather than a change in what is computed.
 fn dot_q8_0(
   data : Bytes,
   row_off : Int,
@@ -468,29 +486,34 @@ fn dot_q8_0(
   x_off : Int,
   n_blocks : Int,
 ) -> Float {
-  let mut acc : Float = 0.0
+  let mut acc : Double = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
     let base = row_off + b * 34
-    let d = @tensor.half_to_float(data.unsafe_read_uint16_le(base).to_int())
+    let d = @tensor.half_to_float(data.unsafe_read_uint16_le(base).to_int()).to_double()
     let xb = x_off + b * 32
     // Unrolled by 4: the accumulator chain is what limits this loop, so four
     // partial sums give the pipeline independent work to overlap.
-    let mut s0 : Float = 0.0
-    let mut s1 : Float = 0.0
-    let mut s2 : Float = 0.0
-    let mut s3 : Float = 0.0
+    let mut s0 : Double = 0.0
+    let mut s1 : Double = 0.0
+    let mut s2 : Double = 0.0
+    let mut s3 : Double = 0.0
     for j = 0; j < 32; j = j + 4 {
-      s0 = s0 + sbyte_float_table[data[base + 2 + j].to_int()] * uget(x, xb + j)
+      s0 = s0 +
+        uget(sbyte_double_table, data.unsafe_get(base + 2 + j).to_int()) *
+        uget(x, xb + j).to_double()
       s1 = s1 +
-        sbyte_float_table[data[base + 3 + j].to_int()] * uget(x, xb + j + 1)
+        uget(sbyte_double_table, data.unsafe_get(base + 3 + j).to_int()) *
+        uget(x, xb + j + 1).to_double()
       s2 = s2 +
-        sbyte_float_table[data[base + 4 + j].to_int()] * uget(x, xb + j + 2)
+        uget(sbyte_double_table, data.unsafe_get(base + 4 + j).to_int()) *
+        uget(x, xb + j + 2).to_double()
       s3 = s3 +
-        sbyte_float_table[data[base + 5 + j].to_int()] * uget(x, xb + j + 3)
+        uget(sbyte_double_table, data.unsafe_get(base + 5 + j).to_int()) *
+        uget(x, xb + j + 3).to_double()
     }
     acc = acc + d * ((s0 + s1) + (s2 + s3))
   }
-  acc
+  Float::from_double(acc)
 }
 
 ///|
