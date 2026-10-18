@@ -141,3 +141,4 @@ extern "C" fn ml_puts(s : Bytes) -> Int = "ml_puts"
 pub fn print_raw(s : String) -> Unit {
   ml_puts(@utf8.encode(s) + b"\x00") |> ignore
 }
+

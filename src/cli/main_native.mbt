@@ -289,6 +289,7 @@ fn usage() -> String {
     "  moonlm generate <model.gguf> <prompt> [options]",
     "  moonlm chat <model.gguf> [options]",
     "  moonlm bench <model.gguf> [--tokens N]",
+    "  moonlm agent --task \"...\" --workspace <dir> [--model <gguf>]",
     "",
     "Commands:",
     "  inspect    Summarize a GGUF model: version, metadata, tensor inventory",
@@ -297,6 +298,7 @@ fn usage() -> String {
     "  generate   Generate a continuation for a prompt",
     "  chat       Interactive multi-turn chat (reads stdin)",
     "  bench      Measure prefill and decode speed",
+    "  agent      Run the sandboxed tool-using agent loop",
     "",
     "Options:",
     "  --json     Emit the report as JSON instead of text",
@@ -414,6 +416,9 @@ fn run(args : Array[String]) -> Int {
   }
   if subcommand == "bench" {
     return run_bench(args)
+  }
+  if subcommand == "agent" {
+    return run_agent_cli(args)
   }
   if subcommand == "logits" {
     if args.length() < 4 {

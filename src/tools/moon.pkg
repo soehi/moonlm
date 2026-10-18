@@ -1,0 +1,28 @@
+// Built-in local tools for the agent runtime.
+//
+// The tool definitions and `calc` are pure MoonBit and build on every backend;
+// the filesystem-backed tools are `native` only, gated per file. The sandbox is
+// shared: the file tools call `Sandbox::resolve`, which canonicalizes the path
+// and compares prefixes, so a path from model output never reaches the OS
+// unchecked.
+
+import {
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/string",
+  "soehi/moonlm/agent",
+}
+
+// On wasm-gc the agent package is imported but unused by `calc`, which is the
+// only file compiled there; imports cannot be scoped per target.
+warnings = "-unused_package"
+
+options(
+  "native-stub": [ "stubs.c" ],
+  targets: {
+    "fs_native.mbt": [ "native" ],
+    "sandbox_native.mbt": [ "native" ],
+    "tools_native.mbt": [ "native" ],
+    "sandbox_wbtest.mbt": [ "native" ],
+    "tools_native_wbtest.mbt": [ "native" ],
+  },
+)

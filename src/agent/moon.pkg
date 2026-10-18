@@ -1,0 +1,12 @@
+// Agent runtime: tool trait, tool-call parsing, schema validation, loop.
+//
+// Pure MoonBit, no FFI, no filesystem. The loop talks to an `Engine` and to
+// whatever tools the caller registers; the filesystem-backed tools live in the
+// `tools` package, which supplies its own sandbox. Must build and test on both
+// `native` and `wasm-gc`.
+
+import {
+  "moonbitlang/core/json",
+  "soehi/moonlm/engine",
+  "soehi/moonlm/sampler",
+}

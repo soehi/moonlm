@@ -107,3 +107,19 @@ int32_t ml_puts(const char *s) {
   fflush(stdout);
   return 0;
 }
+
+/*
+ * 1 if `path` exists (as a file or directory), 0 otherwise.
+ *
+ * Used by the CLI to pick a default model without loading the tools package
+ * into argument parsing.
+ */
+MOONBIT_FFI_EXPORT
+int32_t ml_path_exists(const char *path) {
+  FILE *f = fopen(path, "rb");
+  if (f != NULL) {
+    fclose(f);
+    return 1;
+  }
+  return 0;
+}
