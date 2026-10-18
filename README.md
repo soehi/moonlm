@@ -29,8 +29,8 @@
 
 | 交付物 | 状态 |
 |---|---|
-| `src/tokenizer/`：byte-level BPE（encode / decode / 特殊 token / 字节映射） | ✅ |
-| `src/model/`：RMSNorm / RoPE / GQA 注意力 / SwiGLU / KV cache / 完整前向 | ✅ |
+| `src/tokenizer/`：byte-level BPE（encode / decode / 特殊 token / 字节映射；`smollm` / `qwen2` 预分词器） | ✅ |
+| `src/model/`：RMSNorm / RoPE（NORMAL + NEOX）/ Q/K/V bias / GQA 注意力 / SwiGLU / KV cache / 完整前向 | ✅ |
 | `src/sampler/`：greedy / temperature / top-k / top-p | ✅ |
 | `src/engine/`：`Engine` trait + `PureEngine`（prefill + decode 流式生成） | ✅ |
 | `src/cli/`：`generate` / `chat` / `bench` / `logits` / `profile` | ✅ |
@@ -86,7 +86,23 @@ GC 数组引用，JavaScript 无法构造，且模块不导出内存，模型字
 > 用 `tools/bench_js_kernel.mjs` 逐 bundle 重测的受控结果是 **1.92 → 7.56
 > tok/s（3.9 倍）**。结论（达标 ≥3 tok/s）不变。
 
-后续阶段（Agent 运行时）见 [PLAN.md](PLAN.md)。
+**M3 — Agent 运行时** ✅ **完成（能力边界见 docs/agent.md）**
+
+| 交付物 | 状态 |
+|---|---|
+| `src/agent/`：`Tool` trait、工具调用格式策略（`ToolCallFormat`，解析器独立于循环）、JSON-Schema 校验、执行循环（步数 / 上下文 / 停止条件）、滚动窗口与 observation 截断 | ✅ |
+| `src/tools/`：`list_dir` / `read_file` / `grep_text`（经工作区沙箱）+ `calc`（纯 MoonBit） | ✅ |
+| `src/cli/agent_native.mbt`：`moonlm agent --task ... --workspace ... [--model ...]` | ✅ |
+| 浏览器端：`calc` + 内存 demo 工具；文件工具不注册（无同步文件系统，也无可信的工作区根） | ✅ |
+| BM25 检索 | ❌ 未做（会话规模小，收益不抵依赖成本） |
+
+**实测结论（Qwen2.5-0.5B，Q4_K_M）**：单步工具调用 3/4 成功（列目录、读文件、
+grep），多步"列目录 → 读文件 → 总结"0/2 完成——模型拿到目录列表后直接总结，
+不再读文件。工具调用正确率约 50%。完整失败模式与复现步骤见
+[docs/agent.md](docs/agent.md)；这是模型能力边界，不是循环实现问题（循环本身
+由 22 个脚本化引擎测试覆盖）。
+
+后续阶段见 [PLAN.md](PLAN.md)。
 
 ## 设计约束
 
