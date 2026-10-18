@@ -459,6 +459,9 @@ test "a malformed call is reported once and the loop continues" {
   let engine = ScriptedEngine::{
     replies: [
       "<tool_call>oops</tool_call>",
+      // The gate asks once for evidence because no tool has succeeded yet;
+      // the echo call supplies it, and the following text is accepted.
+      "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}</tool_call>",
       "Sorry, here is the answer.",
     ],
     calls: 0,
@@ -474,7 +477,9 @@ test "a malformed call is reported once and the loop continues" {
   )
   assert_eq(result.stop, Answered)
   assert_eq(result.answer, "Sorry, here is the answer.")
-  assert_eq(result.executed.length(), 0)
+  // The malformed call is reported; the echo call that supplies evidence runs.
+  assert_eq(result.executed.length(), 1)
+  assert_true(result.executed[0].ok)
 }
 
 ///|

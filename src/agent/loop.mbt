@@ -337,8 +337,11 @@ pub fn run_agent(
       // Evidence gate: an answer given before any content-bearing observation
       // is a guess. Asking once for evidence is cheap and turns the measured
       // 0.5B fabrication into either a real read or an honest stop.
-      if config.require_evidence && !have_evidence && !evidence_requested &&
-        !executed.is_empty() {
+      //
+      // The `!executed.is_empty()` condition was dropped deliberately: measured
+      // behaviour is that the model fabricates on the FIRST answer too, before
+      // any tool call, so gating only after a call would miss the common case.
+      if config.require_evidence && !have_evidence && !evidence_requested {
         evidence_requested = true
         history.push(
           Tool(
