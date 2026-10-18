@@ -123,6 +123,18 @@ def main() -> None:
             blocks.append(fx.dequant_q4_0(bytes(data[-18:])))
     add_case("q4_0", 2, rows, cols, bytes(data), blocks)
 
+    # --- q5_0: 4 rows x 64 cols ---
+    rows, cols = 4, 64
+    data = bytearray()
+    blocks = []
+    for r in range(rows):
+        for b in range(cols // 32):
+            quants = rng.integers(-16, 16, size=32, dtype=np.int8)
+            d = 0.04 * (1 + r % 3)
+            data += fx.build_q5_0(quants, d)
+            blocks.append(fx.dequant_q5_0(bytes(data[-22:])))
+    add_case("q5_0", 6, rows, cols, bytes(data), blocks)
+
     # --- q8_0: 4 rows x 64 cols ---
     rows, cols = 4, 64
     data = bytearray()

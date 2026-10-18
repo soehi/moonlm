@@ -15,12 +15,17 @@ The weights are stored as f32 so that a mismatch points at the forward-pass
 arithmetic rather than at quantization (which M0 and the matvec tests already
 cover separately).
 
+A second fixture covers the Qwen2-shaped path: NEOX RoPE plus per-layer Q/K/V
+projection biases. It shares nothing with the first fixture's expectations, so a
+regression in either layout fails independently.
+
 Usage:
     python tools/gen_forward_tests.py
 
 Writes:
-    src/model/gen_forward_test.mbt
-    src/model/test_model.gguf   (only for manual debugging; not needed to test)
+    src/model/gen_forward_test.mbt        (llama: NORMAL RoPE, no biases)
+    src/model/gen_forward_qwen_test.mbt   (qwen2: NEOX RoPE, Q/K/V biases)
+    src/model/test_model.gguf             (manual debugging only)
 """
 
 from __future__ import annotations
@@ -33,7 +38,9 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT = REPO_ROOT / "src" / "model" / "gen_forward_test.mbt"
+QWEN_OUT = REPO_ROOT / "src" / "model" / "gen_forward_qwen_test.mbt"
 DEBUG_GGUF = REPO_ROOT / "src" / "model" / "test_model.gguf"
+DEBUG_QWEN_GGUF = REPO_ROOT / "src" / "model" / "test_model_qwen.gguf"
 
 
 def load_builders():
@@ -226,6 +233,198 @@ def f64_array(name: str, values, doc: str) -> str:
     return "\n".join(lines)
 
 
+# --- the tiny qwen2-shaped test model ---------------------------------------
+
+QWEN_CFG = dict(
+    n_embd=48,
+    n_layer=2,
+    n_ff=96,
+    n_head=4,
+    n_head_kv=2,
+    head_dim=12,
+    vocab=96,
+    context_length=48,
+    rms_eps=1e-6,
+    # Qwen2.5-0.5B uses 1e6; using it here keeps the angles in the range the
+    # real model uses, so a frequency bug shows up as a large error.
+    rope_theta=1_000_000.0,
+)
+
+
+def build_qwen_weights(rng):
+    """Random weights for the Qwen2-shaped fixture, including projection biases.
+
+    Biases are non-zero on purpose: an implementation that loads them but never
+    adds them would match a bias-free reference, so only a fixture with real
+    bias values can catch that.
+    """
+    c = QWEN_CFG
+    w = {}
+    kv = c["n_head_kv"] * c["head_dim"]
+    w["token_embd.weight"] = rng.normal(0, 0.05, size=(c["vocab"], c["n_embd"])).astype(np.float32)
+    for i in range(c["n_layer"]):
+        p = f"blk.{i}."
+        w[p + "attn_norm.weight"] = (1.0 + rng.normal(0, 0.02, size=c["n_embd"])).astype(np.float32)
+        w[p + "attn_q.weight"] = rng.normal(0, 0.05, size=(c["n_embd"], c["n_embd"])).astype(np.float32)
+        w[p + "attn_k.weight"] = rng.normal(0, 0.05, size=(kv, c["n_embd"])).astype(np.float32)
+        w[p + "attn_v.weight"] = rng.normal(0, 0.05, size=(kv, c["n_embd"])).astype(np.float32)
+        w[p + "attn_q.bias"] = rng.normal(0, 0.1, size=c["n_embd"]).astype(np.float32)
+        w[p + "attn_k.bias"] = rng.normal(0, 0.1, size=kv).astype(np.float32)
+        w[p + "attn_v.bias"] = rng.normal(0, 0.1, size=kv).astype(np.float32)
+        w[p + "attn_output.weight"] = rng.normal(0, 0.05, size=(c["n_embd"], c["n_embd"])).astype(np.float32)
+        w[p + "ffn_norm.weight"] = (1.0 + rng.normal(0, 0.02, size=c["n_embd"])).astype(np.float32)
+        w[p + "ffn_gate.weight"] = rng.normal(0, 0.05, size=(c["n_ff"], c["n_embd"])).astype(np.float32)
+        w[p + "ffn_up.weight"] = rng.normal(0, 0.05, size=(c["n_ff"], c["n_embd"])).astype(np.float32)
+        w[p + "ffn_down.weight"] = rng.normal(0, 0.05, size=(c["n_embd"], c["n_ff"])).astype(np.float32)
+    w["output_norm.weight"] = (1.0 + rng.normal(0, 0.02, size=c["n_embd"])).astype(np.float32)
+    # Untied LM head, unlike the llama fixture: Qwen2 ships output.weight.
+    w["output.weight"] = rng.normal(0, 0.05, size=(c["vocab"], c["n_embd"])).astype(np.float32)
+    return w
+
+
+def rope_neox(x, pos, head_dim, theta):
+    """NEOX RoPE: rotate (x[i], x[i + head_dim/2])."""
+    out = x.astype(np.float64).copy()
+    half = head_dim // 2
+    for i in range(half):
+        freq = theta ** (-2.0 * i / head_dim)
+        angle = pos * freq
+        c, s = np.cos(angle), np.sin(angle)
+        a, b = x[i], x[i + half]
+        out[i] = a * c - b * s
+        out[i + half] = a * s + b * c
+    return out
+
+
+def forward_qwen(weights, tokens, use_bias=True):
+    """Reference forward pass for the Qwen2 fixture.
+
+    Differences from `forward`: Q/K/V biases are added after the projection and
+    before RoPE, RoPE is NEOX, and the LM head is untied.
+    """
+    c = QWEN_CFG
+    n_embd, head_dim = c["n_embd"], c["head_dim"]
+    n_head, n_head_kv = c["n_head"], c["n_head_kv"]
+    heads_per_kv = n_head // n_head_kv
+    scale = 1.0 / np.sqrt(head_dim)
+
+    k_cache = [np.zeros((n_head_kv, 0, head_dim)) for _ in range(c["n_layer"])]
+    v_cache = [np.zeros((n_head_kv, 0, head_dim)) for _ in range(c["n_layer"])]
+
+    logits = None
+    for pos, tok in enumerate(tokens):
+        h = weights["token_embd.weight"][tok].astype(np.float64)
+        for layer in range(c["n_layer"]):
+            p = f"blk.{layer}."
+            xn = rms_norm(h, weights[p + "attn_norm.weight"], c["rms_eps"])
+            q = weights[p + "attn_q.weight"].astype(np.float64) @ xn
+            k = weights[p + "attn_k.weight"].astype(np.float64) @ xn
+            v = weights[p + "attn_v.weight"].astype(np.float64) @ xn
+            if use_bias:
+                q = q + weights[p + "attn_q.bias"].astype(np.float64)
+                k = k + weights[p + "attn_k.bias"].astype(np.float64)
+                v = v + weights[p + "attn_v.bias"].astype(np.float64)
+            qh = np.stack([rope_neox(q[hh * head_dim : (hh + 1) * head_dim], pos, head_dim, c["rope_theta"])
+                           for hh in range(n_head)])
+            kh = np.stack([rope_neox(k[hh * head_dim : (hh + 1) * head_dim], pos, head_dim, c["rope_theta"])
+                           for hh in range(n_head_kv)])
+            vh = v.reshape(n_head_kv, head_dim)
+            k_cache[layer] = np.concatenate([k_cache[layer], kh[:, None, :]], axis=1)
+            v_cache[layer] = np.concatenate([v_cache[layer], vh[:, None, :]], axis=1)
+            attn_out = np.zeros(n_embd)
+            for hh in range(n_head):
+                kvh = hh // heads_per_kv
+                scores = k_cache[layer][kvh] @ qh[hh] * scale
+                m = scores.max()
+                e = np.exp(scores - m)
+                probs = e / e.sum()
+                attn_out[hh * head_dim : (hh + 1) * head_dim] = probs @ v_cache[layer][kvh]
+            h = h + weights[p + "attn_output.weight"].astype(np.float64) @ attn_out
+            xn = rms_norm(h, weights[p + "ffn_norm.weight"], c["rms_eps"])
+            gate = weights[p + "ffn_gate.weight"].astype(np.float64) @ xn
+            up = weights[p + "ffn_up.weight"].astype(np.float64) @ xn
+            h = h + weights[p + "ffn_down.weight"].astype(np.float64) @ (silu(gate) * up)
+        xn = rms_norm(h, weights["output_norm.weight"], c["rms_eps"])
+        logits = weights["output.weight"].astype(np.float64) @ xn
+    return logits
+
+
+def write_qwen_gguf(path: Path, weights: dict) -> None:
+    """Write the Qwen2-shaped fixture as GGUF, including the per-layer NEOX key."""
+    c = QWEN_CFG
+    G = load_builders().GgufWriter
+    w = G(alignment=32)
+    w.kv("general.architecture", 8, G._string("qwen2"))
+    w.kv("qwen2.context_length", 4, G._u32(c["context_length"]))
+    w.kv("qwen2.embedding_length", 4, G._u32(c["n_embd"]))
+    w.kv("qwen2.block_count", 4, G._u32(c["n_layer"]))
+    w.kv("qwen2.feed_forward_length", 4, G._u32(c["n_ff"]))
+    w.kv("qwen2.attention.head_count", 4, G._u32(c["n_head"]))
+    w.kv("qwen2.attention.head_count_kv", 4, G._u32(c["n_head_kv"]))
+    w.kv("qwen2.attention.layer_norm_rms_epsilon", 6, G._f32(c["rms_eps"]))
+    w.kv("qwen2.rope.freq_base", 6, G._f32(c["rope_theta"]))
+    # Qwen2 writes the variant under every layer index; the reader requires the
+    # layers to agree.
+    for i in range(c["n_layer"]):
+        w.kv(f"qwen2.rope.{i}.type", 8, G._string("neox"))
+    for name, arr in weights.items():
+        dims = list(arr.shape)[::-1]
+        w.tensor(name, dims, 0, arr.astype("<f4").tobytes())
+    buf, _ = w.build()
+    path.write_bytes(buf)
+
+
+def emit_qwen_fixture() -> None:
+    rng = np.random.default_rng(20261017)
+    weights = build_qwen_weights(rng)
+    tokens = [3, 11, 29, 7, 41, 5]
+    logits = forward_qwen(weights, tokens)
+
+    write_qwen_gguf(DEBUG_QWEN_GGUF, weights)
+    gguf_bytes = DEBUG_QWEN_GGUF.read_bytes()
+
+    parts = [
+        "// GENERATED by tools/gen_forward_tests.py -- do not edit by hand.",
+        "//",
+        "// A Qwen2-shaped tiny transformer: NEOX RoPE (declared per layer as",
+        "// qwen2.rope.<i>.type = \"neox\") and per-layer Q/K/V projection biases,",
+        "// with an untied LM head. Geometry: 2 layers, n_embd 48, 4 query heads /",
+        "// 2 KV heads (GQA), head_dim 12, n_ff 96, vocab 96, RoPE theta 1e6.",
+        "// Weights are f32 so a mismatch localizes to the forward-pass arithmetic.",
+        "",
+        emit_bytes(
+            "forward_qwen_gguf",
+            gguf_bytes,
+            "The Qwen2-shaped test model as GGUF bytes.",
+        ),
+        "///|",
+        "/// The prompt the expected logits correspond to.",
+        f"let forward_qwen_tokens : Array[Int] = [{', '.join(str(t) for t in tokens)}]",
+        "",
+        f64_array("forward_qwen_logits", logits, "Reference logits at the final prompt position."),
+        "",
+        "///|",
+        "/// Number of logits in the reference result (= vocabulary size).",
+        f"let forward_qwen_vocab : Int = {len(logits)}",
+        "",
+    ]
+    QWEN_OUT.write_text("\n".join(parts), encoding="utf-8")
+    print(f"wrote {QWEN_OUT.relative_to(REPO_ROOT)} ({QWEN_OUT.stat().st_size} bytes)")
+    print(f"wrote {DEBUG_QWEN_GGUF.relative_to(REPO_ROOT)} ({len(gguf_bytes)} bytes)")
+
+    # Self-checks: deterministic, and the fixture must actually depend on both
+    # features it exists for. Removing the biases or switching to NORMAL RoPE
+    # must change the result, otherwise the fixture would pass either way.
+    assert np.allclose(logits, forward_qwen(weights, tokens)), "qwen reference not deterministic"
+    logits_nobias = forward_qwen(weights, tokens, use_bias=False)
+    assert not np.allclose(logits, logits_nobias, atol=1e-6), \
+        "fixture does not depend on the biases; it cannot catch a missing add"
+    print(f"  argmax token: {int(np.argmax(logits))}, logit range: "
+          f"[{logits.min():.4f}, {logits.max():.4f}]")
+    print(f"  bias sensitivity: max |logit difference| without biases = "
+          f"{np.max(np.abs(logits - logits_nobias)):.4f}")
+
+
 def main() -> None:
     rng = np.random.default_rng(4242)
     weights = build_weights(rng)
@@ -273,6 +472,8 @@ def main() -> None:
     assert np.allclose(logits, logits2), "reference forward is not deterministic"
     print(f"  argmax token: {int(np.argmax(logits))}, logit range: "
           f"[{logits.min():.4f}, {logits.max():.4f}]")
+
+    emit_qwen_fixture()
 
 
 if __name__ == "__main__":
