@@ -75,19 +75,20 @@ data_start      ┌─ 张量数据 ──────────────�
 
 ## 3. ggml 类型表
 
-M0 支持 6 种反量化类型：
+M0 支持 7 种反量化类型：
 
 | id | 类型 | 块字节 | 每块元素 | 说明 |
 |----|------|--------|----------|------|
 | 0  | F32  | 4   | 1   | 原始 IEEE 754 小端 |
 | 1  | F16  | 2   | 1   | 半精度，需软件解码 |
 | 2  | Q4_0 | 18  | 32  | f16 d + 16 字节半字节对 |
+| 6  | Q5_0 | 22  | 32  | f16 d + 4 字节高位 + 16 字节半字节对 |
 | 8  | Q8_0 | 34  | 32  | f16 d + 32×int8 |
 | 12 | Q4_K | 144 | 256 | f16 d + f16 dmin + 12 字节 scale/min + 128 字节 4bit |
 | 14 | Q6_K | 210 | 256 | 128 字节低 4bit + 64 字节高 2bit + 16×int8 scale + f16 d |
 
 `src/tensor/types.mbt` 里的表覆盖了 `GGML_TYPE_*` 全 43 个 id 的**名称与块规格**
-（含已移除的 q4_2/q4_3、repacked 变体），因此张量目录总能列出；但只有上表 6 种
+（含已移除的 q4_2/q4_3、repacked 变体），因此张量目录总能列出；但只有上表 7 种
 `is_dequantizable()` 为真，其余在反量化时明确报 "unsupported type"，不猜布局。
 
 ## 4. 位布局
@@ -98,6 +99,21 @@ M0 支持 6 种反量化类型：
 byte 0-1: d (f16)     byte j+2 (j=0..15): 低半字节 = 元素 j, 高半字节 = 元素 j+16
 值 = d × (nibble − 8)      ← 以 8 为中心
 ```
+
+### Q5_0（`dequantize_row_q5_0`）
+
+```
+byte 0-1: d (f16)     byte 2-5: qh（32 位 LE word，每元素 1 个高位）
+byte 6-21: qs          低半字节 = 元素 j, 高半字节 = 元素 j+16
+值 = d × ((nibble | qh_bit << 4) − 16)      ← 以 16 为中心
+```
+
+- **元素 j 的第 5 位是 qh word 的第 j 位**，即字节 `j/8` 的 `j%8` 位；高半元素
+  （j+16）取第 `j+16` 位。写成「字节 `j/4` 的 `j%4` 位」是最自然的错误——它
+  只覆盖 word 的低 16 位，前 16 个元素碰巧对、后 16 个全错，黄金向量测试第
+  4 个元素就能抓住。
+- Qwen2.5-0.5B 的 q4_k_m 是混精文件，token_embd 等张量是 Q5_0；已与 llama.cpp
+  的 Python `gguf` 包对拍通过。
 
 ### Q8_0（`dequantize_row_q8_0`）
 
@@ -193,14 +209,97 @@ ql[128] | qh[64] | scales[16] (int8) | d (f16)
 注：bartowski 的 Q4_K_M 实为**混精**文件——272 个张量里 166 个是 `q5_0`。
 CLI 会明确列出「本构建无法反量化」的张量，不会静默略过。
 
-## 7. 尚未覆盖
+## 7. RoPE variants
+
+GGUF 不描述 RoPE 的配对方式本身，而是用字符串声明变体。llama.cpp 对应的枚举是
+`GGML_ROPE_TYPE_NORMAL` 与 `GGML_ROPE_TYPE_NEOX`；两者角度公式相同，**只有配对
+不同**，所以用错变体不会报错，只会得到「语言流畅但数值错误」的输出。
+
+### 配对方式
+
+设 head 内第 `i` 个旋转对的角为 `angle_i = pos * theta^(-2i/head_dim)`（`i` 从 0
+到 `n_rot/2 - 1`，指数分母始终是 `head_dim`，不是 `n_rot`）：
+
+| 变体 | 配对 | head 内布局 | llama.cpp |
+|---|---|---|---|
+| `NORMAL` | `(x[2i], x[2i+1])`，相邻 | `[c s c s c s c s]` | `rope_norm`（llama、SmolLM2） |
+| `NEOX` | `(x[i], x[i + n_rot/2])`，前半与后半 | `[c c c c s s s s]` | `rope_neox`（Qwen2） |
+
+NEOX 的两个注意点：
+
+- 第二个元素偏移是 **`n_rot/2`**，不是 `head_dim/2`。部分旋转（`n_rot <
+  head_dim`）时两者不等；用 `head_dim/2` 会写到旋转区之外，把本该保持原值的
+  维度改掉。
+- 两半合起来才是完整的 `n_rot` 个频率：第 `i` 对用 `i` 号频率，`i` 只遍历前半，
+  所以频率序列在 `[0, n_rot/2)` 与 `[n_rot/2, n_rot)` 两段中连续编号，而不是
+  同一频率的两份拷贝。
+
+`n_rot < head_dim` 时，两个变体都不触碰 `n_rot` 之外的维度。
+
+### Qwen2 的元数据键
+
+Qwen2 的转换器（Hugging Face → GGUF，即 llama.cpp 的 gguf-py）把变体写在**层号
+下**，每个 block 一项：
+
+```
+qwen2.rope.0.type = "neox"
+qwen2.rope.1.type = "neox"          # ...直到 block_count - 1
+```
+
+而不是 `qwen2.rope.type`。部分第三方转换器会写共享键 `qwen2.rope.type`，实现里
+两种拼写都接受，**层键优先**。
+
+`src/model/config.mbt` 的规则：
+
+- 两个键都不存在 → **按架构取默认值**，与 llama.cpp 的
+  `llama_model_rope_type()` 一致：`qwen2` → `NEOX`，llama / SmolLM2 → `NORMAL`。
+  这一点很重要，因为真实的 Qwen2.5-0.5B 文件里根本没有 `qwen2.rope.*.type`
+  键（只有 `qwen2.rope.freq_base`）；按 NORMAL 处理会让每个 head 转到错误的
+  基上，对拍一致率从 99.3% 掉到 49.1%，而且不报任何错；
+- 扫描全部 `0..block_count-1` 的层键；缺项不代表 `NORMAL`，但**已存在的项必须
+  一致**，否则报 `BadValue`；
+- 值只接受 `"normal"` / `"neox"`；其他字符串（如 `"yarn"`）返回 `BadValue`，
+  不静默回退；
+- 键存在但类型不是 string → `BadValue`。
+
+## 8. Pre-tokenizers
+
+GGUF 用 `tokenizer.ggml.pre`（字符串）声明预分词器。本构建支持两个值：
+
+| 值 | 模型 | 规则 |
+|----|------|------|
+| `smollm`（等价 `gpt2`） | SmolLM2、GPT-2 系 | `Digits(individual_digits)` 先切分，再对每块跑 GPT-2 正则 `'s\|'t\|'re\|'ve\|'m\|'ll\|'d\| ?\p{L}+\| ?\p{N}+\| ?[^\s\p{L}\p{N}]+\|\s+(?!\S)\|\s+` |
+| `qwen2` | Qwen2 / Qwen2.5 | transformers 的 `PRETOKENIZE_REGEX`：`(?i:'s\|'t\|'re\|'ve\|'m\|'ll\|'d)\|[^\r\n\p{L}\p{N}]?\p{L}+\|\p{N}\| ?[^\s\p{L}\p{N}]+[\r\n]*\|\s*[\r\n]+\|\s+(?!\S)\|\s+` |
+
+键缺失时按 `smollm` 处理（旧文件没有这个键），未知值返回
+`TokenizerError::UnsupportedPretokenizer`，不静默回退。`tokenizer.ggml.model` 仍只
+接受 `gpt2`；`pre` 只决定在 GPT-2 BPE 之上怎么切分。
+
+### 数字
+
+两个预分词器都把数字切成单字符，但机制不同：SmolLM2 靠前置的
+`Digits(individual_digits)`，Qwen2 的正则里 `\p{N}` **没有 `+`**（一个数字字符）。
+`"3.14"` 在两者下都是 `3 / . / 1 / 4`。区别在于**可切分的边界**（例如空格与数字
+的位置、缩略词大小写、标点是否吞换行），这些由 `gen_qwen2_test.mbt` 的 44 条
+参考编码逐 id 覆盖。
+
+### 两阶段切分的重要性
+
+SmolLM2 的 `Digits` 与正则必须分两段：`Digits` 先把文本切成块，正则再逐块运行。
+前瞻 `\s+(?!\S)` 在块尾看不到后面的数字，所以 `"\n\xa0"`（NBSP）在数字前保持
+一片。把数字判断折进正则的同一遍扫描会让前瞻看到块外字符，切出 `"\n"` + `"\xa0"`
+——HF 不做这个切分。
+
+## 9. 尚未覆盖
 
 M0 刻意不做的事，留给后续阶段：
 
 - **量化与写入**：只读、只反量化。写 GGUF 不在 M0 范围。
-- **未实现的类型**：`q4_1`、`q5_0/1`、`q2_K`、`q3_K`、`q5_K`、`q8_K`、IQ 系列、
+- **未实现的类型**：`q4_1`、`q5_1`、`q2_K`、`q3_K`、`q5_K`、`q8_K`、IQ 系列、
   `bf16`、`mxfp4`、`nvfp4`、`tq1_0/tq2_0`。它们的名称与块规格已在类型表里，能列出、
-  能算字节数，但不能解码。
+  能算字节数，但不能解码。（`q5_0` 已实现——Qwen2.5 混精文件需要它，见第 4 节。）
+- **其他预分词器**：`llama3`、`deepseek*`、`falcon` 等不在支持范围，加载时报
+  `UnsupportedPretokenizer`。
 - **tokenizer**：M1 的事。M0 只保证词表与 merges 的元数据能读出来。
 - **张量数据切片是复制的**：`tensor_bytes` 返回 `Bytes` 副本。M1 做推理时应改为
   直接按 offset 访问以省掉一次拷贝。

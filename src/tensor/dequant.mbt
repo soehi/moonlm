@@ -1,4 +1,5 @@
-// Dequantization kernels for the M0 type set: f32, f16, q4_0, q8_0, q4_K, q6_K.
+// Dequantization kernels for the M0 type set: f32, f16, q4_0, q5_0, q8_0,
+// q4_K, q6_K.
 //
 // Each kernel below is a line-by-line transcription of the matching
 // `dequantize_row_*` function in llama.cpp's `ggml/src/ggml-quants.c`, with the
@@ -94,6 +95,29 @@ fn dq_q4_0(buf : Bytes, base : Int64, out : FixedArray[Float], o : Int) -> Unit 
     let b = byte_at(buf, base + 2L + j.to_int64())
     out[o + j] = Float::from_int((b & 0xF) - 8) * d
     out[o + j + 16] = Float::from_int((b >> 4) - 8) * d
+  }
+}
+
+///|
+/// q5_0: fp16 scale `d`, 4 bytes of high bits, then 16 nibble-pair bytes.
+///
+/// `block_q5_0 { ggml_half d; uint8_t qh[4]; uint8_t qs[16]; }` — 22 bytes per
+/// 32 elements. Element `j` takes bit `j` of the 32-bit little-endian `qh` word
+/// as its fifth bit (`dequantize_row_q5_0`: `xh_0` from bit `j`, `xh_1` from
+/// bit `j + 16`), i.e. byte `j/8` at bit `j%8`. Value =
+/// `d * ((nibble | fifth_bit << 4) - 16)`, centred on 16 like q4_0's 8.
+fn dq_q5_0(buf : Bytes, base : Int64, out : FixedArray[Float], o : Int) -> Unit {
+  let d = f16_to_f32(u16_le(buf, base))
+  for j = 0; j < 16; j = j + 1 {
+    let b = byte_at(buf, base + 6L + j.to_int64())
+    let xh = byte_at(buf, base + 2L + (j >> 3).to_int64())
+    let yh = byte_at(buf, base + 2L + ((j + 16) >> 3).to_int64())
+    out[o + j] = Float::from_int(
+        ((b & 0xF) | (((xh >> (j & 7)) & 1) << 4)) - 16,
+      ) * d
+    out[o + j + 16] = Float::from_int(
+        ((b >> 4) | (((yh >> (j & 7)) & 1) << 4)) - 16,
+      ) * d
   }
 }
 
@@ -300,6 +324,10 @@ pub fn dequant_into(
     }
     2 => {
       dequant_kernel(ty, buf, offset, n_blocks, out, out_offset, dq_q4_0)
+      Ok(())
+    }
+    6 => {
+      dequant_kernel(ty, buf, offset, n_blocks, out, out_offset, dq_q5_0)
       Ok(())
     }
     8 => {

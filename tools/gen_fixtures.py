@@ -41,6 +41,7 @@ TENSOR_OUT = REPO_ROOT / "src" / "tensor" / "gen_golden_test.mbt"
 GGML_TYPE_F32 = 0
 GGML_TYPE_F16 = 1
 GGML_TYPE_Q4_0 = 2
+GGML_TYPE_Q5_0 = 6
 GGML_TYPE_Q8_0 = 8
 GGML_TYPE_Q4_K = 12
 GGML_TYPE_Q6_K = 14
@@ -271,6 +272,43 @@ def dequant_q4_0(block: bytes) -> np.ndarray:
     return out
 
 
+def build_q5_0(values: np.ndarray, d: float) -> bytes:
+    """Q5_0 block: f16 d + 4 high-bit bytes + 16 nibble-pair bytes.
+
+    Element j stores its low 4 bits in qs like q4_0 and its fifth bit as bit j
+    of the little-endian 32-bit qh word. Values are centred on 16.
+    """
+    block = struct.pack("<H", f16_bits(d))
+    qh = 0
+    for j in range(32):
+        if (int(values[j]) + 16) & 0x10:
+            qh |= 1 << j
+    block += struct.pack("<I", qh)
+    for j in range(16):
+        lo = (int(values[j]) + 16) & 0x0F
+        hi = (int(values[j + 16]) + 16) & 0x0F
+        block += bytes([lo | (hi << 4)])
+    return block
+
+
+def dequant_q5_0(block: bytes) -> np.ndarray:
+    """Reference from dequantize_row_q5_0 in ggml-quants.c.
+
+    value = d * ((qs nibble | qh bit << 4) - 16), where qh's bit j belongs to
+    element j: qh[j/4] >> (j%4) for the byte extraction.
+    """
+    d = load_f16(block, 0)
+    qh = struct.unpack("<I", block[2:6])[0]
+    out = np.zeros(32, dtype=np.float64)
+    for j in range(16):
+        b = block[6 + j]
+        xh = (qh >> j) & 1
+        yh = (qh >> (j + 16)) & 1
+        out[j] = (((b & 0x0F) | (xh << 4)) - 16) * d
+        out[j + 16] = (((b >> 4) | (yh << 4)) - 16) * d
+    return out
+
+
 def build_q8_0(values: np.ndarray, d: float) -> bytes:
     """Q8_0 block: f16 d + 32 int8 values."""
     block = struct.pack("<H", f16_bits(d))
@@ -439,6 +477,10 @@ def make_tensor_payloads():
     """One payload per M0 dequantization type, sized to whole blocks."""
     tensors = []
 
+    # Used in order; where the stream starts matters for reproducibility, so
+    # q5_0 (the newest entry) draws after q4_0 and before q8_0.
+    rng = np.random.default_rng(20261014)
+
     # f32: 8 elements.
     f32_vals = np.array([0.5, -1.25, 3.75, 0.0, -0.0625, 128.0, -256.5, 1.0], dtype=np.float32)
     tensors.append(("output.weight", [8], GGML_TYPE_F32, build_f32(f32_vals)))
@@ -457,8 +499,12 @@ def make_tensor_payloads():
     q4_0_block = build_q4_0(q4_quants, 0.125)
     tensors.append(("blk.0.attn_q.weight", [32, 2], GGML_TYPE_Q4_0, q4_0_block * 2))
 
+    # q5_0: 64 elements = 2 blocks.
+    q5_quants = rng.integers(-16, 16, size=64, dtype=np.int8)
+    q5_0_blocks = b"".join(build_q5_0(q5_quants[i * 32 : (i + 1) * 32], 0.09375) for i in range(2))
+    tensors.append(("blk.0.attn_k.weight", [32, 2], GGML_TYPE_Q5_0, q5_0_blocks))
+
     # q8_0: 128 elements = 4 blocks.
-    rng = np.random.default_rng(20261014)
     q8_quants = rng.integers(-128, 128, size=128, dtype=np.int8)
     q8_0_blocks = b"".join(build_q8_0(q8_quants[i * 32 : (i + 1) * 32], 0.03125) for i in range(4))
     tensors.append(("blk.0.ffn_gate.weight", [32, 4], GGML_TYPE_Q8_0, q8_0_blocks))
@@ -855,6 +901,17 @@ def emit_tensor_golden() -> None:
              "and the 2-bit high planes are all in use."],
             q6k_blocks, np.concatenate(q6k_expected))
 
+    # q5_0: 2 blocks. Draws from the rng after every pre-existing section so
+    # the committed bytes for those types are unchanged by this addition.
+    q5a = rng.integers(-16, 16, size=32, dtype=np.int8)
+    q5b = rng.integers(-16, 16, size=32, dtype=np.int8)
+    q5_0_blocks = build_q5_0(q5a, 0.125) + build_q5_0(q5b, 0.0625)
+    q5_0_expected = np.concatenate([dequant_q5_0(q5_0_blocks[:22]), dequant_q5_0(q5_0_blocks[22:])])
+    section("q5_0", "golden_q5_0",
+            ["q5_0: 2 blocks of 32 elements. Quants span -16..15, so the fifth-bit word has",
+             "both zero and one bits set in every byte position."],
+            q5_0_blocks, q5_0_expected)
+
     TENSOR_OUT.write_text("\n".join(header) + "\n".join(sections), encoding="utf-8")
     print(f"wrote {TENSOR_OUT.relative_to(REPO_ROOT)} ({TENSOR_OUT.stat().st_size} bytes)")
 
@@ -900,6 +957,15 @@ def selfcheck() -> None:
     got = dequant_q8_0(build_q8_0(q8q, d8))
     assert np.allclose(got, q8q.astype(np.float64) * float(np.float16(d8)), atol=tol), got
 
+    # q5_0: quants in -16..15, value = d * q, fifth bit in qh.
+    q5q = np.array([-16, -1, 0, 1, 15, -8, 7, -15,
+                    16 - 1, -3, 2, -5, 9, -11, 4, 13,
+                    0, -2, 3, -4, 5, -6, 8, -9,
+                    10, -12, 11, -13, 14, -15, 1, -1], dtype=np.int16)
+    d5 = 0.5
+    got = dequant_q5_0(build_q5_0(q5q, d5))
+    assert np.allclose(got, q5q.astype(np.float64) * float(np.float16(d5)), atol=tol), (got, q5q)
+
     # q4_K: value = d * sc * q - dmin * m for every sub-block.
     quants = np.arange(16, dtype=np.int8).repeat(16)  # 256 entries, per-sub-block constant
     scales = [1, 2, 3, 4, 5, 6, 7, 8]
@@ -923,7 +989,7 @@ def selfcheck() -> None:
         want = fd6 * sc6[n // 16] * float(q6q[n])
         assert abs(got[n] - want) < tol, (n, got[n], want)
 
-    print("self-check passed for f32/f16/q4_0/q8_0/q4_K/q6_K")
+    print("self-check passed for f32/f16/q4_0/q5_0/q8_0/q4_K/q6_K")
 
 
 if __name__ == "__main__":

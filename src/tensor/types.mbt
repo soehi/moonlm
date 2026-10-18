@@ -128,11 +128,11 @@ pub fn GgmlType::is_quantized(self : GgmlType) -> Bool {
 ///|
 /// Whether this build can dequantize the type.
 ///
-/// M0 covers f32, f16, q4_0, q8_0, q4_K and q6_K. Everything else is parsed
+/// Covers f32, f16, q4_0, q5_0, q8_0, q4_K and q6_K. Everything else is parsed
 /// and sized correctly but rejected on dequantization with a named error.
 pub fn GgmlType::is_dequantizable(self : GgmlType) -> Bool {
   match self.id {
-    0 | 1 | 2 | 8 | 12 | 14 => true
+    0 | 1 | 2 | 6 | 8 | 12 | 14 => true
     _ => false
   }
 }

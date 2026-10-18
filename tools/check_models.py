@@ -32,8 +32,8 @@ from pathlib import Path
 
 import numpy as np
 
-# Types M0 dequantizes; used to decide which tensors to value-compare.
-SUPPORTED_TYPES = {"F32", "F16", "Q8_0", "Q4_0", "Q4_K", "Q6_K"}
+# Types this build dequantizes; used to decide which tensors to value-compare.
+SUPPORTED_TYPES = {"F32", "F16", "Q8_0", "Q4_0", "Q5_0", "Q4_K", "Q6_K"}
 
 
 def read_reference(path: Path) -> dict:
