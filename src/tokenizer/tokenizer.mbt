@@ -27,6 +27,8 @@ pub(all) struct Tokenizer {
   /// Special-token strings mapped to ids, scanned before BPE.
   specials : Array[(String, Int)]
   merges : MergeTable
+  /// Which pre-tokenizer to run, from `tokenizer.ggml.pre`.
+  pre : Pretokenizer
   ids : SpecialIds
   add_bos : Bool
   add_eos : Bool
@@ -37,6 +39,8 @@ pub(all) struct Tokenizer {
 pub(all) suberror TokenizerError {
   /// `tokenizer.ggml.model` was present but not a supported value.
   UnsupportedModel(model~ : String)
+  /// `tokenizer.ggml.pre` named a pre-tokenizer this build does not implement.
+  UnsupportedPretokenizer(pre~ : String)
   /// A required GGUF metadata key was missing.
   MissingKey(key~ : String)
   /// A key was present with an unexpected value type.
@@ -58,6 +62,8 @@ pub fn TokenizerError::message(self : TokenizerError) -> String {
 fn tk_err_string(e : TokenizerError) -> String {
   match e {
     UnsupportedModel(model~) => "unsupported tokenizer.ggml.model \"\{model}\" (this build implements gpt2)"
+    UnsupportedPretokenizer(pre~) =>
+      "unsupported tokenizer.ggml.pre \"\{pre}\" (this build implements smollm and qwen2)"
     MissingKey(key~) => "missing GGUF metadata key \"\{key}\""
     WrongType(key~, expected~) => "metadata key \"\{key}\" has an unexpected type, expected \{expected}"
     EmptyVocab => "tokenizer.ggml.tokens is empty"
@@ -126,6 +132,25 @@ pub fn load(f : @gguf.GgufFile) -> Result[Tokenizer, TokenizerError] {
   if model != "gpt2" {
     return Err(UnsupportedModel(model=model))
   }
+  // `tokenizer.ggml.pre` names the pre-tokenizer. Files predating the key use
+  // the plain GPT-2 rule, which this build's SmolLM2 scanner also implements;
+  // SmolLM2 files declare "smollm" explicitly. An unknown value is an error:
+  // falling back would silently mis-tokenize every number.
+  let pre = match f.get("tokenizer.ggml.pre") {
+    // Absent key: the pre-key era, where the GPT-2 rule was the only one.
+    None => Smollm
+    Some(v) =>
+      match v {
+        @gguf.Str(p) =>
+          match p {
+            "smollm" | "gpt2" => Smollm
+            "qwen2" => Qwen2
+            _ => return Err(UnsupportedPretokenizer(pre=p))
+          }
+        // Present but not a string: never silently treat it as absent.
+        _ => return Err(UnsupportedPretokenizer(pre="<non-string>"))
+      }
+  }
   let vocab = match get_string_array(f, "tokenizer.ggml.tokens") {
     Ok(v) => v
     Err(e) => return Err(e)
@@ -177,6 +202,7 @@ pub fn load(f : @gguf.GgufFile) -> Result[Tokenizer, TokenizerError] {
     token_ids,
     specials,
     merges,
+    pre,
     ids: { bos, eos, unk, pad },
     add_bos,
     add_eos,
@@ -268,7 +294,7 @@ fn Tokenizer::encode_plain(
   // encoding is wrong: encoded stand-ins like U+00BD (byte 0xBD) are Unicode
   // numbers in their own right and would be split off, which the reference
   // never does.
-  let pieces = pretokenize_text(span)
+  let pieces = pretokenize(self.pre, span)
   for piece in pieces {
     let piece_bytes = @utf8.encode(piece[:])
     let encoded = bytes_to_gpt2_string(piece_bytes)

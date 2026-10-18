@@ -6,6 +6,23 @@
 // and a missing required key is an error rather than a guess.
 
 ///|
+/// How RoPE pairs dimensions within one head.
+///
+/// GGUF spells these as strings; llama.cpp calls the enum
+/// `GGML_ROPE_TYPE_NORMAL` / `GGML_ROPE_TYPE_NEOX`. The two rotations produce
+/// the same values only when the head is one rotating pair wide, so a model
+/// must be rotated with the variant it was trained on.
+pub(all) enum RopeType {
+  /// Consecutive pairs `(x[2i], x[2i+1])`; produced layout `[cscscscs]`.
+  /// llama.cpp selects this for the llama / SmolLM2 architectures.
+  NORMAL
+  /// Half-split pairs `(x[i], x[i + n_rot/2])`; produced layout `[ccccssss]`.
+  /// llama.cpp selects this for Qwen2, whose GGUF metadata says so with
+  /// `<arch>.rope.<layer>.type = "neox"`.
+  NEOX
+} derive(Eq, Debug)
+
+///|
 /// Transformer hyperparameters for a decoder-only, RMSNorm-pre-norm,
 /// RoPE, GQA, SwiGLU model (the SmolLM2 / Llama family layout).
 pub(all) struct ModelConfig {
@@ -34,6 +51,9 @@ pub(all) struct ModelConfig {
   /// Number of hidden dimensions RoPE rotates; equals `head_dim` unless the
   /// model sets `rope.dimension_count` (partial rotation).
   n_rot : Int
+  /// Pairing convention for RoPE. Absent metadata means `NORMAL`, which keeps
+  /// llama / SmolLM2 numbers unchanged; Qwen2 files declare `NEOX`.
+  rope_type : RopeType
   /// Whether the LM head reuses the token embedding matrix.
   tied_lm_head : Bool
 } derive(Eq, Debug)
@@ -116,6 +136,130 @@ fn opt_double(f : @gguf.GgufFile, key : String, default : Double) -> Double {
 }
 
 ///|
+/// Parse the string GGUF stores for a RoPE variant.
+///
+/// Only the spellings llama.cpp accepts are recognised; anything else is an
+/// error rather than a silent fall back to NORMAL, because a wrong pairing
+/// rotates every head into a plausible-looking but wrong basis.
+fn parse_rope_type(value : String) -> Result[RopeType, String] {
+  if value == "normal" {
+    Ok(NORMAL)
+  } else if value == "neox" {
+    Ok(NEOX)
+  } else {
+    Err(value)
+  }
+}
+
+///|
+/// The RoPE variant llama.cpp picks when the file does not say.
+///
+/// Mirrors `llama_model_rope_type` in llama.cpp's `llama-model.cpp`: `qwen2`
+/// is NEOX, the llama family is NORMAL. Real Qwen2.5 conversions often omit
+/// `qwen2.rope.<layer>.type` entirely (the 0.5B file does), so this default is
+/// the one that matters in practice rather than a theoretical fallback.
+fn rope_type_default(arch : String) -> RopeType {
+  if arch == "qwen2" {
+    NEOX
+  } else {
+    NORMAL
+  }
+}
+
+///|
+/// Resolve the RoPE variant from GGUF.
+///
+/// Qwen2 converters write the variant under a layer index,
+/// `<arch>.rope.<layer>.type`, once per block (llama.cpp's gguf-py uses the
+/// same per-layer layout). Every layer index is checked and the values must
+/// agree; some converters instead emit the single shared `<arch>.rope.type`.
+/// A per-layer key wins over the shared one, and a file with neither is NORMAL
+/// (llama / SmolLM2).
+fn read_rope_type(
+  f : @gguf.GgufFile,
+  arch : String,
+  n_layer : Int,
+) -> Result[RopeType, ModelError] {
+  let mut found : RopeType? = None
+  let mut found_key = ""
+  for i = 0; i < n_layer; i = i + 1 {
+    let key = "\{arch}.rope.\{i}.type"
+    if !f.has_key(key) {
+      continue
+    }
+    let value = match f.get_string(key) {
+      Some(v) => v
+      None =>
+        return Err(
+          BadValue(
+            key~,
+            detail="expected a string naming a RoPE variant (\"normal\" or \"neox\")",
+          ),
+        )
+    }
+    let t = match parse_rope_type(value) {
+      Ok(t) => t
+      Err(bad) =>
+        return Err(
+          BadValue(
+            key~,
+            detail="unknown RoPE variant \"\{bad}\"; expected \"normal\" or \"neox\"",
+          ),
+        )
+    }
+    match found {
+      None => {
+        found = Some(t)
+        found_key = key
+      }
+      Some(prev) =>
+        if prev != t {
+          return Err(
+            BadValue(
+              key~,
+              detail="disagrees with \{found_key}; all layers must use one RoPE variant",
+            ),
+          )
+        }
+    }
+  }
+  match found {
+    Some(t) => Ok(t)
+    None => {
+      let key = "\{arch}.rope.type"
+      if !f.has_key(key) {
+        // No variant key at all. llama.cpp does not default to NORMAL here: it
+        // selects the variant from the architecture, and `LLM_ARCH_QWEN2` maps
+        // to `GGML_ROPE_TYPE_NEOX`. A Qwen2 file converted without the key is
+        // therefore still NEOX; defaulting it to NORMAL silently rotates every
+        // head into the wrong basis (measured as ~49% argmax agreement).
+        return Ok(rope_type_default(arch))
+      }
+      let value = match f.get_string(key) {
+        Some(v) => v
+        None =>
+          return Err(
+            BadValue(
+              key~,
+              detail="expected a string naming a RoPE variant (\"normal\" or \"neox\")",
+            ),
+          )
+      }
+      match parse_rope_type(value) {
+        Ok(t) => Ok(t)
+        Err(bad) =>
+          return Err(
+            BadValue(
+              key~,
+              detail="unknown RoPE variant \"\{bad}\"; expected \"normal\" or \"neox\"",
+            ),
+          )
+      }
+    }
+  }
+}
+
+///|
 /// Build a `ModelConfig` from a parsed GGUF file.
 ///
 /// The architecture's key prefix comes from `general.architecture`; a model
@@ -133,6 +277,19 @@ pub fn ModelConfig::from_gguf(
   }
   // The decoder layout below is shared by llama, smollm2 and qwen2 style files.
   // Anything else would need a different forward pass, so refuse it by name.
+  //
+  // Supported scope for "qwen2" (verified against Qwen2.5-0.5B-Instruct):
+  //   - NEOX RoPE (`rope.<layer>.type = "neox"`, read above);
+  //   - per-layer Q/K/V projection biases (`blk.N.attn_{q,k,v}.bias`, loaded
+  //     optionally by `Model::load` and added after the projection);
+  //   - GQA, RMSNorm pre-norm, SwiGLU FFN, tied or untied LM head — the same
+  //     skeleton as llama.
+  // Known differences NOT covered, none of which occur in the 0.5B file:
+  //   - Qwen2-VL's multimodal towers (vision/merger tensors) — a different
+  //     architecture (`qwen2vl`), rejected by name;
+  //   - RoPE scaling (`rope.scaling.*`, e.g. YaRN / long-context variants)
+  //     would need an angle rescale that this build does not implement;
+  //     `rope.freq_base` alone is honoured.
   let known = arch == "llama" || arch == "smollm" || arch == "smollm2" ||
     arch == "qwen2"
   if !known {
@@ -193,6 +350,10 @@ pub fn ModelConfig::from_gguf(
       ),
     )
   }
+  let rope_type = match read_rope_type(f, arch, n_layer) {
+    Ok(t) => t
+    Err(e) => return Err(e)
+  }
   // Vocabulary size and LM-head tying both come from the tensors, which are
   // authoritative when metadata and tensors disagree.
   let embd = match f.tensor("token_embd.weight") {
@@ -236,6 +397,7 @@ pub fn ModelConfig::from_gguf(
     rms_eps,
     rope_theta,
     n_rot,
+    rope_type,
     tied_lm_head,
   })
 }

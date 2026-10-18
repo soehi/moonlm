@@ -6,9 +6,10 @@
 //
 // Two conventions are easy to get wrong and are called out where they are used:
 //
-//  1. RoPE is the *NORMAL* variant, operating on pairs of ADJACENT head values
-//     (`[cscscscs]`), not the NeoX variant that splits the head in half
-//     (`[ccccssss]`). llama.cpp selects NORMAL for the llama architecture.
+//  1. RoPE has two pairings and the model file decides which one applies.
+//     NORMAL rotates adjacent pairs (`[cscscscs]`, llama / SmolLM2); NEOX
+//     rotates `(x[i], x[i + n_rot/2])` (`[ccccssss]`, Qwen2). The variant is
+//     read from GGUF by `ModelConfig::from_gguf`, never assumed.
 //  2. Attention logits are scaled by `1/sqrt(head_dim)` before the softmax.
 //
 // Weights stay quantized; only activations are floats.
@@ -34,12 +35,20 @@ pub(all) struct Model {
 
 ///|
 /// The weights of one transformer block.
+///
+/// `bq`/`bk`/`bv` are the optional Q/K/V projection biases. llama-family files
+/// omit them; Qwen2 ships one per projection, and skipping them would leave the
+/// outputs plausible but wrong. They are loaded from the f32 tensors, never
+/// folded into the quantized weights (which would require re-quantizing).
 pub(all) struct LayerWeights {
   attn_norm : Vector
   wq : Matrix
   wk : Matrix
   wv : Matrix
   wo : Matrix
+  bq : Vector?
+  bk : Vector?
+  bv : Vector?
   ffn_norm : Vector
   w_gate : Matrix
   w_up : Matrix
@@ -245,6 +254,7 @@ pub fn Model::load(f : @gguf.GgufFile) -> Result[Model, ModelError] {
     )
   }
   let layers : Array[LayerWeights] = []
+  let kv_dim = config.kv_dim()
   for i = 0; i < config.n_layer; i = i + 1 {
     let p = "blk.\{i}."
     let attn_norm = match load_vector(f, p + "attn_norm.weight") {
@@ -265,6 +275,21 @@ pub fn Model::load(f : @gguf.GgufFile) -> Result[Model, ModelError] {
     }
     let wo = match load_matrix(f, p + "attn_output.weight") {
       Ok(m) => m
+      Err(e) => return Err(e)
+    }
+    // Optional projection biases. Presence is probed on the tensor directory
+    // rather than on a config flag: a GGUF either carries the tensors or not,
+    // and llama-family files carry none.
+    let bq = match load_optional_vector(f, p + "attn_q.bias", config.n_embd) {
+      Ok(v) => v
+      Err(e) => return Err(e)
+    }
+    let bk = match load_optional_vector(f, p + "attn_k.bias", kv_dim) {
+      Ok(v) => v
+      Err(e) => return Err(e)
+    }
+    let bv = match load_optional_vector(f, p + "attn_v.bias", kv_dim) {
+      Ok(v) => v
       Err(e) => return Err(e)
     }
     let ffn_norm = match load_vector(f, p + "ffn_norm.weight") {
@@ -307,6 +332,9 @@ pub fn Model::load(f : @gguf.GgufFile) -> Result[Model, ModelError] {
       wk,
       wv,
       wo,
+      bq,
+      bk,
+      bv,
       ffn_norm,
       w_gate,
       w_up,
@@ -330,6 +358,55 @@ pub fn Model::load(f : @gguf.GgufFile) -> Result[Model, ModelError] {
   )
   let scratch = Scratch::new(config)
   Ok({ config, token_embd, layers, output_norm, output, cache, scratch })
+}
+
+///|
+/// Load `name` as a vector when the tensor exists, or `None` when it does not.
+///
+/// Presence is decided by the tensor directory, not by an architecture flag:
+/// llama/SmolLM2 files have no bias tensors at all, and Qwen2 has three per
+/// layer. A present-but-wrong-length bias is an error rather than a truncation,
+/// because adding a short vector would silently corrupt every later element.
+fn load_optional_vector(
+  f : @gguf.GgufFile,
+  name : String,
+  expected_len : Int,
+) -> Result[Vector?, ModelError] {
+  if f.tensor(name) is None {
+    return Ok(None)
+  }
+  let v = match load_vector(f, name) {
+    Ok(v) => v
+    Err(e) => return Err(e)
+  }
+  if v.data.length() != expected_len {
+    return Err(
+      TensorShape(
+        name~,
+        expected="\{expected_len} elements",
+        found="\{v.data.length()}",
+      ),
+    )
+  }
+  Ok(Some(v))
+}
+
+///|
+/// Add an optional bias to `dst[0..len)` in place.
+///
+/// Kept as one small function so the three projection sites share the shape
+/// test; when `bias` is `None` (every llama-family model) this is a single
+/// option check per projection, not a per-element branch.
+fn add_bias_opt(dst : FixedArray[Float], bias : Vector?, len : Int) -> Unit {
+  match bias {
+    None => ()
+    Some(b) => {
+      let src = b.data
+      for i = 0; i < len; i = i + 1 {
+        dst[i] = dst[i] + src[i]
+      }
+    }
+  }
 }
 
 ///|
@@ -440,15 +517,25 @@ fn silu(x : Float) -> Float {
 }
 
 ///|
-/// Rotary position embedding over one head's `head_dim` values, NORMAL pairing.
+/// Rotary position embedding over one head's `head_dim` values.
 ///
-/// llama.cpp's `GGML_ROPE_TYPE_NORMAL` rotates consecutive pairs `(x[2i],
-/// x[2i+1])`, i.e. the result is `[cscscscs]` across the head. This differs from
-/// the NeoX layout, which rotates `(x[i], x[i + head_dim/2])` and yields
-/// `[ccccssss]`; using the wrong one produces fluent-looking but wrong text.
+/// The angle for pair `i` is the same in both variants:
+/// `theta^(-2i/head_dim) * pos`. Only which two values form a pair differs,
+/// matching llama.cpp's `ggml_rope` implementations:
+///
+/// - `NORMAL` (`GGML_ROPE_TYPE_NORMAL`, llama / SmolLM2) pairs consecutive
+///   values `(x[2i], x[2i+1])`, yielding `[cscscscs]` across the head. This is
+///   llama.cpp's `rope_norm` / `rope_yarn` fast path.
+/// - `NEOX` (`GGML_ROPE_TYPE_NEOX`, Qwen2) pairs `(x[i], x[i + n_rot/2])`,
+///   yielding `[ccccssss]`. This is llama.cpp's `rope_neox`, whose pair index
+///   runs over the first half of the rotated block; the second element of the
+///   pair is offset by `n_rot/2`, not by `1`.
+///
+/// Using the wrong variant produces fluent-looking but numerically wrong text,
+/// which is why the config never guesses it.
 ///
 /// `n_rot` may be smaller than `head_dim` (partial rotation); dimensions past
-/// `n_rot` are left untouched.
+/// `n_rot` are left untouched by both variants.
 fn rope_in_place(
   x : FixedArray[Float],
   offset : Int,
@@ -456,19 +543,45 @@ fn rope_in_place(
   head_dim : Int,
   n_rot : Int,
   theta : Double,
+  rope_type : RopeType,
 ) -> Unit {
   let n_pairs = n_rot / 2
-  for i = 0; i < n_pairs; i = i + 1 {
-    // freq = theta^(-2i/head_dim)
-    let exponent = -2.0 * Double::from_int(i) / Double::from_int(head_dim)
-    let freq = @math.pow(theta, exponent)
-    let angle = Double::from_int(pos) * freq
-    let c = Float::from_double(@math.cos(angle))
-    let s = Float::from_double(@math.sin(angle))
-    let a = x[offset + 2 * i]
-    let b = x[offset + 2 * i + 1]
-    x[offset + 2 * i] = a * c - b * s
-    x[offset + 2 * i + 1] = a * s + b * c
+  match rope_type {
+    NORMAL => {
+      // Unchanged from the original llama implementation: pair (2i, 2i+1).
+      for i = 0; i < n_pairs; i = i + 1 {
+        // freq = theta^(-2i/head_dim)
+        let exponent = -2.0 * Double::from_int(i) /
+          Double::from_int(head_dim)
+        let freq = @math.pow(theta, exponent)
+        let angle = Double::from_int(pos) * freq
+        let c = Float::from_double(@math.cos(angle))
+        let s = Float::from_double(@math.sin(angle))
+        let a = x[offset + 2 * i]
+        let b = x[offset + 2 * i + 1]
+        x[offset + 2 * i] = a * c - b * s
+        x[offset + 2 * i + 1] = a * s + b * c
+      }
+    }
+    NEOX => {
+      // Half-split pairs (i, i + n_rot/2); i runs over the first half only.
+      // The frequency index is still `i`, so the first and second half of the
+      // rotated block are two interleaved frequency sequences of length
+      // n_rot/2, not two copies of the same rotation.
+      let half = n_pairs
+      for i = 0; i < n_pairs; i = i + 1 {
+        let exponent = -2.0 * Double::from_int(i) /
+          Double::from_int(head_dim)
+        let freq = @math.pow(theta, exponent)
+        let angle = Double::from_int(pos) * freq
+        let c = Float::from_double(@math.cos(angle))
+        let s = Float::from_double(@math.sin(angle))
+        let a = x[offset + i]
+        let b = x[offset + half + i]
+        x[offset + i] = a * c - b * s
+        x[offset + half + i] = a * s + b * c
+      }
+    }
   }
 }
 
@@ -521,13 +634,34 @@ pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, Mode
     lw.wq.matvec(sc.normed, sc.q)
     lw.wk.matvec(sc.normed, sc.k)
     lw.wv.matvec(sc.normed, sc.v)
+    // Qwen2 biases, applied after the projection and before RoPE. llama-family
+    // files have none, in which case this costs one option check each.
+    add_bias_opt(sc.q, lw.bq, n_embd)
+    add_bias_opt(sc.k, lw.bk, kv_dim)
+    add_bias_opt(sc.v, lw.bv, kv_dim)
     // 4. RoPE, applied to Q and K only, once per token. Because the rotated K is
     // stored in the cache, cached positions are never re-rotated.
     for h = 0; h < n_head; h = h + 1 {
-      rope_in_place(sc.q, h * head_dim, pos, head_dim, cfg.n_rot, cfg.rope_theta)
+      rope_in_place(
+        sc.q,
+        h * head_dim,
+        pos,
+        head_dim,
+        cfg.n_rot,
+        cfg.rope_theta,
+        cfg.rope_type,
+      )
     }
     for h = 0; h < n_head_kv; h = h + 1 {
-      rope_in_place(sc.k, h * head_dim, pos, head_dim, cfg.n_rot, cfg.rope_theta)
+      rope_in_place(
+        sc.k,
+        h * head_dim,
+        pos,
+        head_dim,
+        cfg.n_rot,
+        cfg.rope_theta,
+        cfg.rope_type,
+      )
     }
     // 5. Append K/V for this position.
     let base = (layer_idx * n_head_kv) * self.cache.capacity * head_dim

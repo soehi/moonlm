@@ -34,25 +34,27 @@ fn truncate(s : String, limit : Int) -> String {
 /// `Tokenizer::load` minus GGUF extraction).
 ///|
 test "fixture vocab size matches" {
-  inspect(golden_vocab.length(), content="\{golden_vocab_size}")
+  inspect(golden_vocab().length(), content="\{golden_vocab_size}")
 }
 
 ///|
 fn golden_tokenizer() -> Tokenizer {
+  let vocab = golden_vocab()
   let token_ids : Map[String, Int] = Map([])
-  for i, t in golden_vocab {
+  for i, t in vocab {
     token_ids[t] = i
   }
   let specials : Array[(String, Int)] = []
   // Control tokens: the 17 leading <|...|> entries, matching the real model.
   for i = 0; i < 17; i = i + 1 {
-    specials.push((golden_vocab[i], i))
+    specials.push((vocab[i], i))
   }
   {
-    vocab: golden_vocab,
+    vocab,
     token_ids,
     specials,
-    merges: MergeTable::new(golden_merges),
+    merges: MergeTable::new(golden_merges()),
+    pre: Smollm,
     ids: { bos: golden_bos, eos: golden_eos, unk: 0, pad: golden_eos },
     add_bos: false,
     add_eos: false,
@@ -63,14 +65,14 @@ fn golden_tokenizer() -> Tokenizer {
 test "golden encode matches reference ids" {
   let tk = golden_tokenizer()
   let mut off = 0
-  for i, text in golden_inputs {
-    let want_len = golden_ids_lengths[i]
+  for i, text in golden_inputs() {
+    let want_len = golden_ids_lengths()[i]
     let got = tk.encode(text)
     if got.length() != want_len {
       fail("input \{i} (\{truncate(text, 20)}...): length \{got.length()} != \{want_len}")
     }
     for j = 0; j < want_len; j = j + 1 {
-      let want = golden_ids_flat[off + j]
+      let want = golden_ids_flat()[off + j]
       if got[j] != want {
         fail("input \{i} (\{truncate(text, 20)}...): token[\{j}] = \{got[j]}, expected \{want}")
       }
@@ -82,7 +84,7 @@ test "golden encode matches reference ids" {
 ///|
 test "golden encode-decode round-trips exactly" {
   let tk = golden_tokenizer()
-  for i, text in golden_inputs {
+  for i, text in golden_inputs() {
     let ids = tk.encode(text)
     let decoded = tk.decode(ids)
     if decoded != text {
@@ -94,9 +96,10 @@ test "golden encode-decode round-trips exactly" {
 ///|
 test "special tokens encode to single ids" {
   let tk = golden_tokenizer()
+  let vocab = golden_vocab()
   // First 17 vocab entries are control tokens.
   for i = 0; i < 17; i = i + 1 {
-    let text = golden_vocab[i]
+    let text = vocab[i]
     let ids = tk.encode(text)
     if ids.length() != 1 || ids[0] != i {
       fail("special token \{text} encoded to \{ids.length()} ids, first \{ids.get(0).unwrap_or(-1)}, expected [\{i}]")

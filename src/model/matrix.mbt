@@ -172,7 +172,7 @@ pub fn Matrix::dequant_row(
   let bs = self.ty.block_size
   let n_blocks = self.cols / bs
   match self.ty.id {
-    0 | 1 | 2 | 8 | 12 | 14 => {
+    0 | 1 | 2 | 6 | 8 | 12 | 14 => {
       decode_row_into(
         self.ty,
         self.data,
@@ -215,6 +215,23 @@ fn decode_row_into(
           let byte = data[row_off + base + 2 + j].to_int()
           out[b * 32 + j] = Float::from_int((byte & 0xF) - 8) * d
           out[b * 32 + 16 + j] = Float::from_int((byte >> 4) - 8) * d
+        }
+      }
+    }
+    6 => {
+      for b = 0; b < n_blocks; b = b + 1 {
+        let base = b * 22
+        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base).to_int())
+        for j = 0; j < 16; j = j + 1 {
+          let byte = data[row_off + base + 6 + j].to_int()
+          let xh = data[row_off + base + 2 + (j >> 3)].to_int()
+          let yh = data[row_off + base + 2 + ((j + 16) >> 3)].to_int()
+          out[b * 32 + j] = Float::from_int(
+              ((byte & 0xF) | (((xh >> (j & 7)) & 1) << 4)) - 16,
+            ) * d
+          out[b * 32 + 16 + j] = Float::from_int(
+              ((byte >> 4) | (((yh >> (j & 7)) & 1) << 4)) - 16,
+            ) * d
         }
       }
     }
@@ -320,6 +337,11 @@ pub fn Matrix::matvec(
         y[r] = dot_q4_0(data, base + r * rb, x, 0, n_blocks)
       }
     }
+    6 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        y[r] = dot_q5_0(data, base + r * rb, x, 0, n_blocks)
+      }
+    }
     8 => {
       for r = 0; r < n_rows; r = r + 1 {
         y[r] = dot_q8_0(data, base + r * rb, x, 0, n_blocks)
@@ -387,6 +409,7 @@ fn dot_row(
     0 => dot_f32(data, row_off, x, x_off, n_blocks)
     1 => dot_f16(data, row_off, x, x_off, n_blocks)
     2 => dot_q4_0(data, row_off, x, x_off, n_blocks)
+    6 => dot_q5_0(data, row_off, x, x_off, n_blocks)
     8 => dot_q8_0(data, row_off, x, x_off, n_blocks)
     12 => dot_q4_K(data, row_off, x, x_off, n_blocks)
     14 => dot_q6_K(data, row_off, x, x_off, n_blocks)
@@ -502,6 +525,48 @@ fn dot_q4_0(
     acc = acc + d * (sl + sh)
   }
   acc
+}
+
+///|
+/// q5_0: fp16 scale, 4 high-bit bytes, then 16 nibble-pair bytes.
+///
+/// Structured like `dot_q8_0` — `Double` accumulation and four partial sums —
+/// because the element count and the per-element work are the same shape. The
+/// fifth bit of element `j` is bit `j` of the little-endian `qh` word
+/// (`dequantize_row_q5_0`: `xh_0` from bit `j`, `xh_1` from bit `j + 16`), read
+/// here as one u32 with word shifts.
+fn dot_q5_0(
+  data : Bytes,
+  row_off : Int,
+  x : FixedArray[Float],
+  x_off : Int,
+  n_blocks : Int,
+) -> Float {
+  let mut acc : Double = 0.0
+  for b = 0; b < n_blocks; b = b + 1 {
+    let base = row_off + b * 22
+    let d = @tensor.half_to_float(data.unsafe_read_uint16_le(base).to_int()).to_double()
+    let xb = x_off + b * 32
+    let qh = data.unsafe_read_uint32_le(base + 2).reinterpret_as_int()
+    let mut s0 : Double = 0.0
+    let mut s1 : Double = 0.0
+    let mut s2 : Double = 0.0
+    let mut s3 : Double = 0.0
+    for j = 0; j < 16; j = j + 2 {
+      let bl = data.unsafe_get(base + 6 + j).to_int()
+      let bh = data.unsafe_get(base + 7 + j).to_int()
+      let q0 = (((bl & 0xF) | (((qh >> j) & 1) << 4)) - 16).to_double()
+      let q1 = (((bl >> 4) | (((qh >> (j + 16)) & 1) << 4)) - 16).to_double()
+      let q2 = (((bh & 0xF) | (((qh >> (j + 1)) & 1) << 4)) - 16).to_double()
+      let q3 = (((bh >> 4) | (((qh >> (j + 17)) & 1) << 4)) - 16).to_double()
+      s0 = s0 + q0 * uget(x, xb + j).to_double()
+      s1 = s1 + q1 * uget(x, xb + 16 + j).to_double()
+      s2 = s2 + q2 * uget(x, xb + j + 1).to_double()
+      s3 = s3 + q3 * uget(x, xb + 17 + j).to_double()
+    }
+    acc = acc + d * ((s0 + s1) + (s2 + s3))
+  }
+  Float::from_double(acc)
 }
 
 ///|
@@ -758,6 +823,13 @@ pub fn matvec_pair(
         let off = r * rb
         y_a[r] = dot_q4_0(data_a, base_a + off, x, 0, n_blocks)
         y_b[r] = dot_q4_0(data_b, base_b + off, x, 0, n_blocks)
+      }
+    }
+    6 => {
+      for r = 0; r < n_rows; r = r + 1 {
+        let off = r * rb
+        y_a[r] = dot_q5_0(data_a, base_a + off, x, 0, n_blocks)
+        y_b[r] = dot_q5_0(data_b, base_b + off, x, 0, n_blocks)
       }
     }
     0 => {

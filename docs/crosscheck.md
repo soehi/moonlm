@@ -144,13 +144,53 @@ These figures are from after the M2 kernel work; the numbers quoted when M1 was
 first checked in were 15.0 / 14.4 (native) and 0.7 (browser, before the fixes
 described in `docs/browser.md`).
 
+## Qwen2.5-0.5B-Instruct (Q4_K_M)
+
+Model: `qwen2.5-0.5b-instruct-q4_k_m.gguf`, 24 layers, n_embd 896, 14/2 GQA,
+head_dim 64, RoPE theta 1e6, 291 tensors (133 Q5_0, 13 Q8_0, 12 Q4_K,
+12 Q6_K, 121 F32). RoPE is NEOX and each layer has Q/K/V projection biases.
+
+Reference: llama.cpp 0.7.0-dev built from source (`--ctx-size 2048 -t 4`),
+48 steps per prompt, default threshold.
+
+| Prompt | agree/total | rate |
+|---|---|---|
+| The capital of France is | 48/48 | 100.0% |
+| Once upon a time | 47/48 | 97.9% |
+| def fibonacci(n): | 47/48 | 97.9% |
+| The quick brown fox jumps over | 48/48 | 100.0% |
+| 2 + 2 = | 37/37 | 100.0% |
+| Water is composed of hydrogen and | 48/48 | 100.0% |
+| **overall** | **275/277** | **99.28%** |
+
+The two disagreements are single positions, as in the SmolLM2 table.
+
+### What this run found
+
+An earlier revision of the NEOX support scored 49.10% on this same comparison.
+The cause was not the pairing code but the default: the real Qwen2.5-0.5B GGUF
+carries no `qwen2.rope.<layer>.type` key at all (`rope` metadata is only
+`qwen2.rope.freq_base`), and the reader defaulted a missing key to NORMAL.
+
+llama.cpp does not do that. `llama_model_rope_type()` selects the variant from
+the architecture, and `LLM_ARCH_QWEN2` maps to `GGML_ROPE_TYPE_NEOX`. The
+reader now mirrors it (`rope_type_default` in `src/model/config.mbt`): qwen2
+defaults to NEOX, the llama family to NORMAL. With that one change the same
+weights scored 99.28%.
+
+The lesson is worth recording because the failure shape was deceptive: 49%
+agreement on short prompts still produces fluent-looking text, and no error is
+raised anywhere. Only the teacher-forcing comparison distinguishes "wrong
+basis" from "floating-point drift".
+
 ## What the numbers do and do not establish
 
 Established: the container parser, the tokenizer, every quantized decode path,
-the forward pass (RMSNorm, RoPE, GQA, SwiGLU, KV cache), and the sampler are
-individually correct and correct in combination — 97.2% per-position agreement
-against an independent implementation at 288 positions, with all divergences
-attributable to documented near-ties.
+the forward pass (RMSNorm, RoPE, NEOX and NORMAL, Q/K/V biases, GQA, SwiGLU,
+KV cache), and the sampler are individually correct and correct in combination
+— 97.2% per-position agreement on SmolLM2 at 288 positions and 99.3% on
+Qwen2.5-0.5B at 277 positions, both against an independent implementation,
+with all divergences attributable to documented near-ties.
 
 Not established: byte-identical output. Any near-tie can break either way, so
 free-running text equality with llama.cpp is not achievable without matching its
