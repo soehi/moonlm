@@ -5,5 +5,5 @@
 
 import {
   "moonbitlang/core/encoding/utf8",
-  "soehi/moonlm/tensor",
+  "soehi/gguf/tensor",
 }

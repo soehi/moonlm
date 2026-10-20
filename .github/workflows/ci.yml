@@ -31,9 +31,10 @@ jobs:
         # edited without re-running it and the committed test data no longer
         # matches its source. `git diff` is used rather than a checksum file so
         # line-ending normalization cannot produce a false failure.
+        # The paths point into the `gguf` submodule, which owns both packages.
         run: |
           python tools/gen_fixtures.py
-          if ! git diff --exit-code -- src/gguf/gen_fixture_test.mbt src/tensor/gen_golden_test.mbt; then
+          if ! git diff --exit-code -- gguf/src/gguf/gen_fixture_test.mbt gguf/src/tensor/gen_golden_test.mbt; then
             echo "::error::generated fixtures are stale; run 'python tools/gen_fixtures.py' and commit the result"
             exit 1
           fi
@@ -66,3 +67,45 @@ jobs:
       # rest of the tree builds for two other backends.
       - name: Build (js, the browser target)
         run: moon build src/web --target js --release
+
+  # The `gguf` submodule is a separately publishable module (soehi/gguf) with its
+  # own moon.mod. It is checked as an independent module so a change that only
+  # builds inside the moonlm workspace still fails before publishing. It has no
+  # dependency on moonlm's own source, so `working-directory` is the only thing
+  # that separates the two jobs.
+  gguf:
+    name: soehi/gguf (native + wasm-gc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gguf
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit toolchain
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Show toolchain version
+        run: moon version
+
+      - name: Static check (native)
+        run: moon check --target native
+
+      - name: Static check (wasm-gc)
+        run: moon check --target wasm-gc
+
+      - name: Test (native)
+        run: moon test --target native
+
+      - name: Test (wasm-gc)
+        run: moon test --target wasm-gc
+
+      # The published artifact is what consumers get, so building both backends
+      # is part of the gate rather than a smoke test.
+      - name: Build (native)
+        run: moon build --target native
+
+      - name: Build (wasm-gc)
+        run: moon build --target wasm-gc

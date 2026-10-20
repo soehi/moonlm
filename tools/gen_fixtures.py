@@ -21,8 +21,8 @@ Usage:
     python tools/gen_fixtures.py
 
 Writes:
-    src/gguf/gen_fixture_test.mbt
-    src/tensor/gen_golden_test.mbt
+    gguf/src/gguf/gen_fixture_test.mbt
+    gguf/src/tensor/gen_golden_test.mbt
 """
 
 from __future__ import annotations
@@ -34,8 +34,12 @@ from pathlib import Path
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-GGUF_OUT = REPO_ROOT / "src" / "gguf" / "gen_fixture_test.mbt"
-TENSOR_OUT = REPO_ROOT / "src" / "tensor" / "gen_golden_test.mbt"
+# The fixtures are consumed by the `gguf` submodule, which owns both packages
+# since the extraction; the generator stays in the top-level `tools/` because
+# it also serves the model cross-check and is run from the repo root in CI.
+GGUF_MODULE_ROOT = REPO_ROOT / "gguf"
+GGUF_OUT = GGUF_MODULE_ROOT / "src" / "gguf" / "gen_fixture_test.mbt"
+TENSOR_OUT = GGUF_MODULE_ROOT / "src" / "tensor" / "gen_golden_test.mbt"
 
 # ggml type ids, from GGML_TYPE_* in llama.cpp's ggml.h.
 GGML_TYPE_F32 = 0
