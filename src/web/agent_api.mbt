@@ -74,7 +74,8 @@ pub impl @agent.Tool for DemoListTool with fn parameters_schema(
   self : DemoListTool,
 ) -> Json {
   let _ = self
-  { "type": Json::string("object"), "properties": {} }
+  // No arguments: an object schema with no fields still rejects unknown keys.
+  @agent.Schema::object().to_json()
 }
 
 ///|
@@ -116,17 +117,18 @@ pub impl @agent.Tool for DemoReadTool with fn parameters_schema(
   self : DemoReadTool,
 ) -> Json {
   let _ = self
-  {
-    "type": Json::string("object"),
-    "properties": {
-      "name": {
-        "type": Json::string("string"),
-        "description": Json::string("Exact file name, as returned by demo_list."),
-      },
-    },
-    "required": Json::array([Json::string("name")]),
-    "additionalProperties": false,
-  }
+  demo_read_schema().to_json()
+}
+
+///|
+/// The one definition of `demo_read`'s arguments.
+fn demo_read_schema() -> @agent.Schema {
+  @agent.Schema::object().req(
+    @agent.string(
+      name="name",
+      description="Exact file name, as returned by demo_list.",
+    ),
+  )
 }
 
 ///|
@@ -135,14 +137,9 @@ pub impl @agent.Tool for DemoReadTool with fn invoke(
   args : Json,
 ) -> Result[@agent.ToolOutput, @agent.ToolError] {
   let _ = self
-  let name = match args {
-    Object(fields) =>
-      match fields.get("name") {
-        Some(String(s)) => s
-        Some(_) => return Err(InvalidArguments(message="\"name\" must be a string"))
-        None => return Err(InvalidArguments(message="missing field \"name\""))
-      }
-    _ => return Err(InvalidArguments(message="arguments must be a JSON object"))
+  let name = match demo_read_schema().decode(args) {
+    Ok(a) => a.get("name")
+    Err(e) => return Err(InvalidArguments(message=e.to_string()))
   }
   for pair in demo_files {
     let (file_name, content) = pair

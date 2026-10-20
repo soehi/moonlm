@@ -167,3 +167,173 @@ test "grep_text searches a subdirectory, not just the root" {
   )
   assert_true(hits.contains("sub/nested.txt:1: nested"))
 }
+
+// --- drift tests -----------------------------------------------------------
+//
+// Each built-in tool is called with four kinds of malformed arguments and must
+// answer `InvalidArguments` with a message that names the offending field path.
+// The path is the point: it comes from the schema decoder, so these tests fail
+// if the schema and the decoder ever disagree about a field's name or type.
+//
+// The four kinds:
+//   1. wrong type for a declared field
+//   2. missing required field
+//   3. unknown (extra) field
+//   4. a value outside a declared constraint (enum, or empty string)
+
+///|
+/// Assert a call is rejected as `InvalidArguments` and the message names `path`.
+fn expect_invalid(
+  tool : &@agent.Tool,
+  args : Json,
+  path : String,
+  what : String,
+) -> Unit raise {
+  match invoke_tool(tool, args) {
+    Ok(out) =>
+      fail("\{what}: expected InvalidArguments, got success: \{out.text}")
+    Err(InvalidArguments(message~)) => {
+      if !message.contains(path) {
+        fail(
+          "\{what}: message does not name field path \"\{path}\": \{message}",
+        )
+      }
+    }
+    Err(SandboxDenied(message~)) =>
+      fail("\{what}: expected InvalidArguments, got SandboxDenied: \{message}")
+    Err(IoFailure(message~)) =>
+      fail("\{what}: expected InvalidArguments, got IoFailure: \{message}")
+  }
+}
+
+///|
+fn json_of(text : String) -> Json raise {
+  try {
+    @json.parse(text)
+  } catch {
+    e => fail("bad test JSON: \{e}")
+  }
+}
+
+///|
+test "calc rejects all four malformed shapes with a field path" {
+  let tool = CalcTool::{ }
+  // 1. wrong type
+  expect_invalid(
+    tool,
+    json_of("{\"expression\": 42}"),
+    "expression",
+    "calc wrong type",
+  )
+  // 2. missing required field
+  expect_invalid(tool, json_of("{}"), "expression", "calc missing field")
+  // 3. unknown field
+  expect_invalid(
+    tool,
+    json_of("{\"expression\": \"1+1\", \"extra\": 1}"),
+    "extra",
+    "calc unknown field",
+  )
+  // 4. violates minLength
+  expect_invalid(
+    tool,
+    json_of("{\"expression\": \"\"}"),
+    "expression",
+    "calc empty expression",
+  )
+}
+
+///|
+test "list_dir rejects all four malformed shapes with a field path" {
+  let root = sandbox_root()
+  let sb = Sandbox::open(fixture_workspace(root)).unwrap()
+  let tool = ListDirTool::{ sandbox: sb }
+  expect_invalid(tool, json_of("{\"path\": 3}"), "path", "list_dir wrong type")
+  expect_invalid(tool, json_of("{}"), "path", "list_dir missing field")
+  expect_invalid(
+    tool,
+    json_of("{\"path\": \".\", \"depth\": 2}"),
+    "depth",
+    "list_dir unknown field",
+  )
+  // A non-object argument is rejected before any field is looked at.
+  expect_invalid(tool, json_of("[1]"), "arguments", "list_dir non-object")
+}
+
+///|
+test "read_file rejects all four malformed shapes with a field path" {
+  let root = sandbox_root()
+  let sb = Sandbox::open(fixture_workspace(root)).unwrap()
+  let tool = ReadFileTool::{ sandbox: sb }
+  expect_invalid(tool, json_of("{\"path\": true}"), "path", "read_file wrong type")
+  expect_invalid(tool, json_of("{}"), "path", "read_file missing field")
+  expect_invalid(
+    tool,
+    json_of("{\"path\": \"inside.txt\", \"encoding\": \"utf8\"}"),
+    "encoding",
+    "read_file unknown field",
+  )
+  expect_invalid(tool, json_of("{\"path\": [\"a\"]}"), "path", "read_file array path")
+}
+
+///|
+test "grep_text rejects all four malformed shapes with a field path" {
+  let root = sandbox_root()
+  let sb = Sandbox::open(fixture_workspace(root)).unwrap()
+  let tool = GrepTextTool::{ sandbox: sb }
+  expect_invalid(tool, json_of("{\"pattern\": 7}"), "pattern", "grep wrong type")
+  expect_invalid(tool, json_of("{}"), "pattern", "grep missing field")
+  expect_invalid(
+    tool,
+    json_of("{\"pattern\": \"x\", \"regex\": true}"),
+    "regex",
+    "grep unknown field",
+  )
+  // minLength on `pattern`, and the optional `path` must still be a string.
+  expect_invalid(tool, json_of("{\"pattern\": \"\"}"), "pattern", "grep empty pattern")
+  expect_invalid(
+    tool,
+    json_of("{\"pattern\": \"x\", \"path\": 9}"),
+    "path",
+    "grep wrong-typed optional",
+  )
+}
+
+///|
+test "the optional field's default is applied by the schema, not the tool" {
+  // `path` defaults to "." in the schema definition; a call that omits it must
+  // still search the workspace root rather than fail or search "".
+  let root = sandbox_root()
+  let sb = Sandbox::open(fixture_workspace(root)).unwrap()
+  let tool = GrepTextTool::{ sandbox: sb }
+  let hits = invoke_text(tool, json_of("{\"pattern\": \"nest\"}"))
+  assert_true(hits.contains("sub/nested.txt"))
+}
+
+///|
+test "rendered schema and decoder agree on required fields" {
+  // The drift this file exists to prevent: a field listed in `required` must be
+  // the same field `decode` demands. Rendering and decoding both walk one
+  // Schema value, so this asserts the two views line up.
+  let schema = calc_schema()
+  let rendered = schema.to_json()
+  let required = match rendered {
+    Object(fields) =>
+      match fields.get("required") {
+        Some(Array(items)) => items.map(fn(j) {
+          match j {
+            String(s) => s
+            _ => ""
+          }
+        })
+        _ => []
+      }
+    _ => []
+  }
+  assert_eq(required, ["expression"])
+  // And the decoder rejects exactly that field when it is absent.
+  match schema.decode(json_of("{}")) {
+    Ok(_) => fail("decode accepted a call missing the required field")
+    Err(e) => assert_eq(e.path, "expression")
+  }
+}

@@ -22,18 +22,20 @@ pub impl @agent.Tool for CalcTool with fn parameters_schema(
   self : CalcTool,
 ) -> Json {
   let _ = self
-  {
-    "type": Json::string("object"),
-    "properties": {
-      "expression": {
-        "type": Json::string("string"),
-        "description": Json::string("Arithmetic expression, e.g. \"(3+4)*2/7\"."),
-        "minLength": 1,
-      },
-    },
-    "required": Json::array([Json::string("expression")]),
-    "additionalProperties": false,
-  }
+  calc_schema().to_json()
+}
+
+///|
+/// The one definition of `calc`'s arguments. The model-facing schema and the
+/// decoder are both derived from this value.
+pub fn calc_schema() -> @agent.Schema {
+  @agent.Schema::object().req(
+    @agent.string(
+      name="expression",
+      description="Arithmetic expression, e.g. \"(3+4)*2/7\".",
+      min_len=1,
+    ),
+  )
 }
 
 ///|
@@ -42,15 +44,9 @@ pub impl @agent.Tool for CalcTool with fn invoke(
   args : Json,
 ) -> Result[@agent.ToolOutput, @agent.ToolError] {
   let _ = self
-  let expression = match args {
-    Object(fields) =>
-      match fields.get("expression") {
-        Some(String(s)) => s
-        Some(_) =>
-          return Err(InvalidArguments(message="\"expression\" must be a string"))
-        None => return Err(InvalidArguments(message="missing field \"expression\""))
-      }
-    _ => return Err(InvalidArguments(message="arguments must be a JSON object"))
+  let expression = match calc_schema().decode(args) {
+    Ok(a) => a.get("expression")
+    Err(e) => return Err(InvalidArguments(message=e.to_string()))
   }
   match evaluate(expression) {
     Ok(v) =>

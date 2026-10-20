@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-10-20T13:28:54+00:00",
+  "generated_at": "2026-10-20T13:56:26+00:00",
   "configuration": {
     "toolchain": "0.1.20260819",
     "toolchain_expected": "0.1.20260819",
@@ -17,17 +17,17 @@
     "sha256_matches_expected": true
   },
   "metrics": {
-    "native_exe_kb": 638.5,
-    "web_js_kb": 589.1,
-    "web_brotli_kb": 59.8,
-    "cold_start_ms": 279.7,
-    "prefill_tok_s": 16.18122897441437,
-    "decode_tok_s": 15.470147136014885,
+    "native_exe_kb": 641.5,
+    "web_js_kb": 603.1,
+    "web_brotli_kb": 60.5,
+    "cold_start_ms": 283.4,
+    "prefill_tok_s": 16.02563916422071,
+    "decode_tok_s": 15.351403544298991,
     "throughput_tokens": 64,
-    "peak_memory_mb": 189.3,
+    "peak_memory_mb": 189.8,
     "steady_memory_mb": 183.4,
-    "browser_load_ms": 299.0,
-    "browser_decode_tok_s": 7.273,
+    "browser_load_ms": 279.0,
+    "browser_decode_tok_s": 6.324,
     "browser_tokens": 16,
     "browser_note": null
   },

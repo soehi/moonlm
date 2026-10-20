@@ -60,7 +60,7 @@ MoonBit 编译到 Wasm-GC 后体积小、启动快、无 GC 暂停抖动，天�
 | ADR-2 | **首批目标模型：SmolLM2-135M/360M、Qwen2.5-0.5B-Instruct** | 135M Q4 量化后约 90–100MB，可在浏览器可接受时间内加载；0.5B 作为 native 目标。浏览器 Demo 用 135M，native 用 360M/0.5B |
 | ADR-3 | **Tokenizer 先做 byte-level BPE**（SmolLM2/Qwen 用此类词表），SentencePiece 二期再做 | BPE 无需预编译 proto 文件，纯 MoonBit 实现复杂度低一个量级；目标模型的词表直接存在 GGUF 元数据里 |
 | ADR-4 | **量化支持顺序：F32/F16 → Q8_0 → Q4_0 → Q4_K/Q6_K** | 先做格式简单、易对拍的块量化，K-quant 位操作复杂，用 llama.cpp 做黄金对照 |
-| ADR-5 | **Agent 工具调用用 trait + JSON-Schema 静态校验**，不做 eval/动态字符串分发 | 展示 MoonBit 类型系统优势：工具签名即类型，非法参数在编译期/校验期被拒绝；后期可选接入 `moon_outlines` 做约束解码，让模型"只能"生成合法调用 |
+| ADR-5 | **Agent 工具调用用 trait + 单一来源的 Schema 定义**，不做 eval/动态字符串分发 | 工具签名即 Schema：每个工具的参数字段只在一处声明（`src/agent/schema.mbt` 的 `Schema` 值），模型看到的 JSON Schema 与工具执行的解码都由它派生，两者不可能漂移。**校验是运行时的，不是编译期的**——core 的 `derive(ToJson, FromJson)` 能从类型解码，但没有从类型生成 Schema 的能力，也没有自定义 derive 钩子，因此不存在"编译器拒绝非法调用"这回事。准确表述：**签名即 Schema，校验集中在类型层入口，运行时执行**。后期可选接入 `moon_outlines` 做约束解码，让模型"只能"生成合法调用 |
 | ADR-6 | **采样实现 greedy / temperature / top-k / top-p**，repetition-penalty 二期 | 覆盖演示与评测所需，避免一开始摊大饼 |
 | ADR-7 | **性能策略：基准先行**。每阶段都有 tokens/s 基准，优化手段按优先级：数据布局/减少分配 → wasm SIMD128（若 MoonBit 后端支持则启用）→ 循环展开 → native FFI 兜底 | 推理是性能敏感领域，没有基准就没有可信的"性能优势"叙事 |
 

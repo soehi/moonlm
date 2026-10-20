@@ -47,19 +47,19 @@ pub impl @agent.Tool for ListDirTool with fn parameters_schema(
   self : ListDirTool,
 ) -> Json {
   let _ = self
-  {
-    "type": Json::string("object"),
-    "properties": {
-      "path": {
-        "type": Json::string("string"),
-        "description": Json::string(
-          "Workspace-relative directory, e.g. \".\" or \"docs\".",
-        ),
-      },
-    },
-    "required": Json::array([Json::string("path")]),
-    "additionalProperties": false,
-  }
+  list_dir_schema().to_json()
+}
+
+///|
+/// The one definition of `list_dir`'s arguments: the model-facing schema and
+/// the decoder both come from this.
+fn list_dir_schema() -> @agent.Schema {
+  @agent.Schema::object().req(
+    @agent.string(
+      name="path",
+      description="Workspace-relative directory, e.g. \".\" or \"docs\".",
+    ),
+  )
 }
 
 ///|
@@ -67,9 +67,9 @@ pub impl @agent.Tool for ListDirTool with fn invoke(
   self : ListDirTool,
   args : Json,
 ) -> Result[@agent.ToolOutput, @agent.ToolError] {
-  let path = match string_field(args, "path") {
-    Ok(p) => p
-    Err(e) => return Err(e)
+  let path = match decode_args(list_dir_schema(), args) {
+    Ok(a) => a.get("path")
+    Err(e) => return Err(InvalidArguments(message=e.to_string()))
   }
   let resolved = match self.sandbox.resolve(path) {
     Ok(p) => p
@@ -125,19 +125,18 @@ pub impl @agent.Tool for ReadFileTool with fn parameters_schema(
   self : ReadFileTool,
 ) -> Json {
   let _ = self
-  {
-    "type": Json::string("object"),
-    "properties": {
-      "path": {
-        "type": Json::string("string"),
-        "description": Json::string(
-          "Workspace-relative file path, e.g. \"docs/agent.md\".",
-        ),
-      },
-    },
-    "required": Json::array([Json::string("path")]),
-    "additionalProperties": false,
-  }
+  read_file_schema().to_json()
+}
+
+///|
+/// The one definition of `read_file`'s arguments.
+fn read_file_schema() -> @agent.Schema {
+  @agent.Schema::object().req(
+    @agent.string(
+      name="path",
+      description="Workspace-relative file path, e.g. \"docs/agent.md\".",
+    ),
+  )
 }
 
 ///|
@@ -145,9 +144,9 @@ pub impl @agent.Tool for ReadFileTool with fn invoke(
   self : ReadFileTool,
   args : Json,
 ) -> Result[@agent.ToolOutput, @agent.ToolError] {
-  let path = match string_field(args, "path") {
-    Ok(p) => p
-    Err(e) => return Err(e)
+  let path = match decode_args(read_file_schema(), args) {
+    Ok(a) => a.get("path")
+    Err(e) => return Err(InvalidArguments(message=e.to_string()))
   }
   let resolved = match self.sandbox.resolve(path) {
     Ok(p) => p
@@ -217,24 +216,31 @@ pub impl @agent.Tool for GrepTextTool with fn parameters_schema(
   self : GrepTextTool,
 ) -> Json {
   let _ = self
-  {
-    "type": Json::string("object"),
-    "properties": {
-      "pattern": {
-        "type": Json::string("string"),
-        "description": Json::string("Literal text to find; not a regex."),
-        "minLength": 1,
-      },
-      "path": {
-        "type": Json::string("string"),
-        "description": Json::string(
-          "Workspace-relative directory to search. Defaults to \".\".",
-        ),
-      },
-    },
-    "required": Json::array([Json::string("pattern")]),
-    "additionalProperties": false,
-  }
+  grep_text_schema().to_json()
+}
+
+///|
+/// The one definition of `grep_text`'s arguments.
+///
+/// `path` is optional with a default of "."; the default lives here, so the
+/// schema the model sees and the value the tool receives cannot disagree about
+/// what "no path" means.
+fn grep_text_schema() -> @agent.Schema {
+  @agent.Schema::object()
+    .req(
+      @agent.string(
+        name="pattern",
+        description="Literal text to find; not a regex.",
+        min_len=1,
+      ),
+    )
+    .opt(
+      @agent.string(
+        name="path",
+        description="Workspace-relative directory to search. Defaults to \".\".",
+      ),
+      default=".",
+    )
 }
 
 ///|
@@ -242,22 +248,9 @@ pub impl @agent.Tool for GrepTextTool with fn invoke(
   self : GrepTextTool,
   args : Json,
 ) -> Result[@agent.ToolOutput, @agent.ToolError] {
-  let pattern = match string_field(args, "pattern") {
-    Ok(p) => p
-    Err(e) => return Err(e)
-  }
-  if pattern == "" {
-    return Err(InvalidArguments(message="pattern must not be empty"))
-  }
-  // `path` is optional: the schema lists `pattern` as the only required field.
-  let path = match args {
-    Object(fields) =>
-      match fields.get("path") {
-        Some(String(p)) => p
-        Some(_) => return Err(InvalidArguments(message="path must be a string"))
-        None => "."
-      }
-    _ => "."
+  let (pattern, path) = match decode_args(grep_text_schema(), args) {
+    Ok(a) => (a.get("pattern"), a.get("path"))
+    Err(e) => return Err(InvalidArguments(message=e.to_string()))
   }
   let resolved = match self.sandbox.resolve(path) {
     Ok(p) => p
@@ -372,20 +365,16 @@ fn is_probably_text(text : String) -> Bool {
 }
 
 ///|
-/// Extract a required string field from an argument object.
-fn string_field(
+/// Decode `args` against `schema`, returning the typed accessors.
+///
+/// The tools call this instead of reaching into `Json` by hand: the schema they
+/// render and the values they read come from the same description, so the two
+/// cannot drift apart.
+fn decode_args(
+  schema : @agent.Schema,
   args : Json,
-  key : String,
-) -> Result[String, @agent.ToolError] {
-  match args {
-    Object(fields) =>
-      match fields.get(key) {
-        Some(String(s)) => Ok(s)
-        Some(_) => Err(InvalidArguments(message="\"\{key}\" must be a string"))
-        None => Err(InvalidArguments(message="missing field \"\{key}\""))
-      }
-    _ => Err(InvalidArguments(message="arguments must be a JSON object"))
-  }
+) -> Result[@agent.Args, @agent.SchemaError] {
+  schema.decode(args)
 }
 
 ///|
