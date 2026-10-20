@@ -68,6 +68,15 @@ jobs:
       - name: Build (js, the browser target)
         run: moon build src/web --target js --release
 
+      # Deployment-size gate. These are the two numbers the project's "does it
+      # fit on an edge device" claim rests on, so a silent doubling is a
+      # regression even when every test passes. No model is needed, which is
+      # why this runs here rather than in the model-dependent local gate.
+      - name: Deployment size gate
+        run: |
+          python benchmarks/run.py --no-model --skip-build
+          python benchmarks/gate.py --sizes-only
+
   # The `gguf` submodule is a separately publishable module (soehi/gguf) with its
   # own moon.mod. It is checked as an independent module so a change that only
   # builds inside the moonlm workspace still fails before publishing. It has no

@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-10-20T13:28:54+00:00",
+  "configuration": {
+    "toolchain": "0.1.20260819",
+    "toolchain_expected": "0.1.20260819",
+    "toolchain_matches": true,
+    "platform": "Windows-11-10.0.26100-SP0",
+    "machine": "AMD64",
+    "threads": 1,
+    "build": "release"
+  },
+  "model": {
+    "path_name": "SmolLM2-135M-Instruct-Q8_0.gguf",
+    "size_bytes": 144811360,
+    "sha256": "5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83",
+    "sha256_matches_expected": true
+  },
+  "metrics": {
+    "native_exe_kb": 638.5,
+    "web_js_kb": 589.1,
+    "web_brotli_kb": 59.8,
+    "cold_start_ms": 279.7,
+    "prefill_tok_s": 16.18122897441437,
+    "decode_tok_s": 15.470147136014885,
+    "throughput_tokens": 64,
+    "peak_memory_mb": 189.3,
+    "steady_memory_mb": 183.4,
+    "browser_load_ms": 299.0,
+    "browser_decode_tok_s": 7.273,
+    "browser_tokens": 16,
+    "browser_note": null
+  },
+  "gates": {
+    "native_exe_limit_kb": 700,
+    "web_brotli_limit_kb": 70,
+    "peak_memory_limit_mb": 220
+  }
+}

@@ -187,4 +187,10 @@ loopback 上起一个 `llama-server`（见 [docs/crosscheck.md](docs/crosscheck.
 - [docs/crosscheck.md](docs/crosscheck.md) — 与 llama.cpp 的逐位置对拍方法与数据
 - [docs/performance.md](docs/performance.md) — 性能实测、瓶颈分析与已否决的优化路径
 - [docs/browser.md](docs/browser.md) — 浏览器目标选择依据、实测数据与零网络验证
-- [docs/memory.md](docs/memory.md) — 部署体积与内存实测：体积 473 KB exe / 33 KB brotli，内存已从 663 MB 降到 189 MB（steady state 156 MB，同模型下低于 llama-server 的 169 MB）
+- [docs/memory.md](docs/memory.md) — 部署体积与内存实测的成因分析：内存从 663 MB 降到 189 MB
+  （steady state 156 MB，同模型下低于 llama-server 的 169 MB）。**当前数字以
+  [benchmarks/RESULTS.md](benchmarks/RESULTS.md) 为准**
+- [benchmarks/](benchmarks/) — **固定配置下任何人可复现**的端侧推理包络基准：
+  工具链版本、模型 SHA-256、构建参数与机器声明都写死在
+  [CONFIG.md](benchmarks/CONFIG.md)；一条 `python benchmarks/run.py --model <path>`
+  产出体积、冷启动、吞吐与峰值内存，CI 对体积设门禁
