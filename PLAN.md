@@ -77,11 +77,16 @@ MoonBit 编译到 Wasm-GC 后体积小、启动快、无 GC 暂停抖动，天�
 
 ```
 moonlm/
-├── moon.mod
+├── moon.mod                 # soehi/moonlm：消费 soehi/gguf 版本依赖
 ├── PLAN.md                  # 本文档
+├── gguf/                    # 独立模块 soehi/gguf（可单独发布/复用）
+│   ├── moon.mod
+│   ├── README.md            # Scope 与非目标
+│   ├── docs/gguf-notes.md   # 格式笔记与踩坑
+│   └── src/
+│       ├── (根包)           # GGUF 二进制解析：header/metadata KV/tensor 目录/对齐
+│       └── tensor/          # 反量化（F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K）
 ├── src/
-│   ├── gguf/                # GGUF 二进制解析：header/metadata KV/tensor 目录/对齐
-│   ├── tensor/              # 缓冲区、反量化（Q8_0/Q4_0/Q4_K/Q6_K）、matmul/attention 算子
 │   ├── tokenizer/           # byte-level BPE：词表加载、编码、解码、special tokens
 │   ├── model/               # Transformer 前向：RMSNorm、RoPE、GQA、KV cache（按架构注册）
 │   ├── sampler/             # greedy / temperature / top-k / top-p
@@ -159,8 +164,9 @@ CI 覆盖 native + wasm-gc + js 三个后端构建。
 
 **目标**：把"读模型"这件事做扎实。这是全项目最可测、风险最低的起点。
 
-> **状态：已完成。** 实现见 `src/gguf/`、`src/tensor/`、`src/cli/`；
-> 格式与踩坑记录见 `docs/gguf-notes.md`；对拍脚本见 `tools/check_models.py`。
+> **状态：已完成。** GGUF 与张量层已抽成独立模块 `soehi/gguf`（仓库内 `gguf/`），
+> moonlm 以版本依赖消费它；CLI 见 `src/cli/`。
+> 格式与踩坑记录见 `gguf/docs/gguf-notes.md`；对拍脚本见 `tools/check_models.py`。
 > 交付物：`inspect` 子命令另支持 `--json`（便于与 `gguf_dump` 逐字段对比）与
 > `dequant`（导出单张量解码值，用于真实模型数值对拍）。
 

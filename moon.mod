@@ -21,3 +21,7 @@ description = "Local LLM inference engine and strongly-typed agent runtime, writ
 preferred_target = "wasm-gc"
 
 source = "src"
+
+import {
+  "soehi/gguf@0.1.0",
+}

@@ -5,6 +5,6 @@
 
 import {
   "moonbitlang/core/math",
-  "soehi/moonlm/gguf",
-  "soehi/moonlm/tensor",
+  "soehi/gguf",
+  "soehi/gguf/tensor",
 }

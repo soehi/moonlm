@@ -13,10 +13,10 @@ import {
   "moonbitlang/core/string",
   "soehi/moonlm/agent",
   "soehi/moonlm/engine",
-  "soehi/moonlm/gguf",
+  "soehi/gguf",
   "soehi/moonlm/model",
   "soehi/moonlm/sampler",
-  "soehi/moonlm/tensor",
+  "soehi/gguf/tensor",
   "soehi/moonlm/tokenizer",
   "soehi/moonlm/tools",
 }

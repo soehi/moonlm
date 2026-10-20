@@ -34,7 +34,7 @@ jobs:
         # The paths point into the `gguf` submodule, which owns both packages.
         run: |
           python tools/gen_fixtures.py
-          if ! git diff --exit-code -- gguf/src/gguf/gen_fixture_test.mbt gguf/src/tensor/gen_golden_test.mbt; then
+          if ! git diff --exit-code -- gguf/src/gen_fixture_test.mbt gguf/src/tensor/gen_golden_test.mbt; then
             echo "::error::generated fixtures are stale; run 'python tools/gen_fixtures.py' and commit the result"
             exit 1
           fi

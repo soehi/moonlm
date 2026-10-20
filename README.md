@@ -9,8 +9,8 @@
 
 | 交付物 | 状态 |
 |---|---|
-| `src/gguf/`：header / metadata KV（12 种类型 + 嵌套数组）/ 张量目录 / 对齐 | ✅ |
-| `src/tensor/`：F32 / F16 / Q4_0 / Q8_0 / Q4_K / Q6_K 反量化 | ✅ |
+| `soehi/gguf` 模块（`gguf/`，独立发布）：header / metadata KV（12 种类型 + 嵌套数组）/ 张量目录 / 对齐 | ✅ |
+| 同上 `soehi/gguf/tensor`：F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K 反量化 | ✅ |
 | `src/cli/`：`moonlm inspect <model.gguf>`（native，另支持 `--json`、`dequant`） | ✅ |
 | 双 target（native + wasm-gc）`check` / `test` / `build` 全绿 | ✅ |
 
@@ -106,7 +106,8 @@ grep），多步"列目录 → 读文件 → 总结"0/2 完成——模型拿到
 
 ## 设计约束
 
-- `gguf/`、`tensor/` 为**纯 MoonBit**：无 FFI、无第三方依赖，同时通过 `native` 与 `wasm-gc`。
+- `soehi/gguf`（仓库内 `gguf/`，独立 `moon.mod`）为**纯 MoonBit**：无 FFI、无第三方依赖，
+  同时通过 `native` 与 `wasm-gc`。它是可单独复用的公共资产，moonlm 以版本依赖消费它。
   CLI 的文件读取是唯一例外，用 `extern "C"` + native stub，并单独按 target 隔离。
 - 只做**反量化**（量化交给 llama.cpp 现成模型），只**读** GGUF，不写。
 - 容错优先：任何畸形输入返回带出错偏移的错误值，不 panic、不下标越界。

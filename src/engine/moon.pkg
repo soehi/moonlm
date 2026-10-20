@@ -5,7 +5,7 @@
 import {
   "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/env",
-  "soehi/moonlm/gguf",
+  "soehi/gguf",
   "soehi/moonlm/model",
   "soehi/moonlm/sampler",
   "soehi/moonlm/tokenizer",

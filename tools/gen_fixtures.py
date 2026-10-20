@@ -21,7 +21,7 @@ Usage:
     python tools/gen_fixtures.py
 
 Writes:
-    gguf/src/gguf/gen_fixture_test.mbt
+    gguf/src/gen_fixture_test.mbt
     gguf/src/tensor/gen_golden_test.mbt
 """
 
@@ -38,7 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # since the extraction; the generator stays in the top-level `tools/` because
 # it also serves the model cross-check and is run from the repo root in CI.
 GGUF_MODULE_ROOT = REPO_ROOT / "gguf"
-GGUF_OUT = GGUF_MODULE_ROOT / "src" / "gguf" / "gen_fixture_test.mbt"
+GGUF_OUT = GGUF_MODULE_ROOT / "src" / "gen_fixture_test.mbt"
 TENSOR_OUT = GGUF_MODULE_ROOT / "src" / "tensor" / "gen_golden_test.mbt"
 
 # ggml type ids, from GGML_TYPE_* in llama.cpp's ggml.h.
