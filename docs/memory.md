@@ -119,7 +119,7 @@ so the copy is gone.
 
 ### 2. Every tensor was copied out of the buffer (≈133 MB) — **fixed**
 
-`src/gguf/file.mbt`, `GgufFile::tensor_bytes`:
+`soehi/gguf` 模块的 `src/file.mbt`, `GgufFile::tensor_bytes`:
 
 ```moonbit
 let view = self.buf.view(start=..., end=...)

@@ -1,7 +1,6 @@
 # MoonLM
 
-纯 MoonBit 编写的**端侧本地 LLM 推理引擎 + 强类型 Agent 运行时**。
-零 API 调用、零数据外传，同一份代码编译到 **native 边缘设备** 与 **浏览器** 两个后端。
+MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 641.5 KB / 60.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
 
 ## 当前进度
 
@@ -9,7 +8,7 @@
 
 | 交付物 | 状态 |
 |---|---|
-| `soehi/gguf` 模块（`gguf/`，独立发布）：header / metadata KV（12 种类型 + 嵌套数组）/ 张量目录 / 对齐 | ✅ |
+| `soehi/gguf` 模块（独立仓库，独立发布）：header / metadata KV（12 种类型 + 嵌套数组）/ 张量目录 / 对齐 | ✅ |
 | 同上 `soehi/gguf/tensor`：F32 / F16 / Q4_0 / Q5_0 / Q8_0 / Q4_K / Q6_K 反量化 | ✅ |
 | `src/cli/`：`moonlm inspect <model.gguf>`（native，另支持 `--json`、`dequant`） | ✅ |
 | 双 target（native + wasm-gc）`check` / `test` / `build` 全绿 | ✅ |
@@ -17,7 +16,7 @@
 **验收结果**
 
 - 64 个单元 / 黄金 / 畸形输入测试在 native 与 wasm-gc 上全部通过。
-- 6 种类型反量化与 llama.cpp 参考实现的黄金向量误差 ≤ 1e-6。
+- 7 种存储类型（其中 5 种为块量化）反量化与 llama.cpp 参考实现的黄金向量误差 ≤ 1e-6。
 - 真实模型对拍（SmolLM2-135M-Instruct，Q8_0 与 Q4_K_M 各一份）与 llama.cpp 的
   `gguf` 读出器一致：header、全部 37 个 metadata 键、272 个张量
   （名称 / 类型 / 维度 / 元素数 / offset / 字节数），以及 F32 / Q8_0 / Q4_K / Q6_K
@@ -33,7 +32,7 @@
 | `src/model/`：RMSNorm / RoPE（NORMAL + NEOX）/ Q/K/V bias / GQA 注意力 / SwiGLU / KV cache / 完整前向 | ✅ |
 | `src/sampler/`：greedy / temperature / top-k / top-p | ✅ |
 | `src/engine/`：`Engine` trait + `PureEngine`（prefill + decode 流式生成） | ✅ |
-| `src/cli/`：`generate` / `chat` / `bench` / `logits` / `profile` | ✅ |
+| `src/cli/`：`inspect` / `dequant` / `tokenize` / `generate` / `chat` / `bench` / `logits` / `profile` | ✅ |
 
 **验收结果**
 
@@ -46,10 +45,10 @@
   96.18%，差异来自参考实现本身——同一本地参考下，内存优化前后的逐 prompt
   结果逐位相同。两个数字都记录在 `docs/crosscheck.md`。
   方法与完整数据见 [docs/crosscheck.md](docs/crosscheck.md)。
-- 真实模型可生成连贯文本；单线程 decode 18.4 tok/s、prefill 19.0 tok/s
+- 真实模型可生成连贯文本；单线程 decode 15.4 tok/s、prefill 16.0（旧工具链 18.4 / 19.0）
   （M2 的内核优化把 decode 从 14.4 提到 18.4，见下）。
 - 性能与瓶颈分析见 [docs/performance.md](docs/performance.md)：内核为纯标量、
-  无 SIMD，比 llama.cpp 单线程（57.2 tok/s）慢约 3 倍。
+  无 SIMD，比 llama.cpp 单线程（57.2 tok/s）慢约 3.7 倍。
 
 **M2 — 浏览器：Web Demo** ✅ **完成**
 
@@ -64,7 +63,7 @@
 - Chrome（in-app Chromium）加载 SmolLM2-135M Q8_0（138 MB）后可流式生成：
   **decode 6.3 tok/s、prefill 8.2 tok/s**，超过 ≥3 tok/s 的目标 2 倍。
 - **浏览器与 native 的 token id 逐位一致**（两个 prompt 均验证），比验收线更强。
-- 加载体验：读取 198 ms、解析 4.4 s、引擎产物 306 KB。
+- 加载体验：读取 198 ms、解析 4.4 s、引擎产物 306 KB（当前工具链实测 603 KB / brotli 60.5 KB，见 benchmarks/RESULTS.md）。
 - **零网络验证**（三重证据）：产物无任何外部 URL；instrument `fetch`/`XHR`/
   `WebSocket`/`sendBeacon` 后推理期间记录为 **0 次调用**；把 `fetch` 替换为
   必然 reject 的函数后仍能正确生成。
@@ -75,6 +74,7 @@ GC 数组引用，JavaScript 无法构造，且模块不导出内存，模型字
 （实测报 `type incompatibility when transforming from/to JS`）；`js` 后端下
 `Bytes` 就是 `Uint8Array`。MoonBit 官方 web 模板同样声明 `"preferred-target": "js"`。
 引擎各包仍双后端可构建可测试，只有这个边界包是 `js` 专属。
+`moon.mod` 的 `preferred_target` 保持 `wasm-gc`：`web` 是 js 专属包，`cli` 目前只有 wasm-gc 占位 main，模块级默认只能取其一；浏览器构建始终显式 `--target js`。
 
 **性能靠实测而非猜测修回来**：两个修复都是读**生成的 JavaScript** 找到的——
 `Float` 运算在该后端编译为 `Math.fround` 调用（改 f64 累加）；`Bytes` 索引生成
@@ -106,7 +106,7 @@ grep），多步"列目录 → 读文件 → 总结"0/2 完成——模型拿到
 
 ## 设计约束
 
-- `soehi/gguf`（仓库内 `gguf/`，独立 `moon.mod`）为**纯 MoonBit**：无 FFI、无第三方依赖，
+- `soehi/gguf`（独立仓库，独立 `moon.mod`）为**纯 MoonBit**：无 FFI、无第三方依赖，
   同时通过 `native` 与 `wasm-gc`。它是可单独复用的公共资产，moonlm 以版本依赖消费它。
   CLI 的文件读取是唯一例外，用 `extern "C"` + native stub，并单独按 target 隔离。
 - 只做**反量化**（量化交给 llama.cpp 现成模型），只**读** GGUF，不写。
@@ -153,7 +153,7 @@ python tools/serve_web.py --model-dir /path/to/ggufs
 # 打开 http://127.0.0.1:8000/ ，选一个 .gguf，按「生成」
 ```
 
-`web/dist/` 是完全自包含的产物（一个 HTML + 一个 306 KB 的 JS），无后端、无 CDN。
+`web/dist/` 是完全自包含的产物（一个 HTML + 一个 306 KB 的 JS）（当前工具链实测 603 KB / brotli 60.5 KB，见 benchmarks/RESULTS.md），无后端、无 CDN。
 用文件选择框加载模型时页面不发起任何请求；用 URL 加载（`--model-dir` 提供）
 相当于从本地服务器读一个静态文件。推理过程本身零网络请求，见
 [docs/browser.md](docs/browser.md)。
@@ -187,7 +187,7 @@ loopback 上起一个 `llama-server`（见 [docs/crosscheck.md](docs/crosscheck.
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) — GGUF 格式与 ggml 反量化算法的权威定义
 - [PLAN.md](PLAN.md) — 完整技术方案与阶段规划
 - `soehi/gguf` 模块（注册表）——GGUF 格式图、位布局与实现踩坑笔记随包发布，
-  见其 `docs/gguf-notes.md`
+  见其模块内 `docs/gguf-notes.md`（随 `soehi/gguf` 发布）
 - [docs/crosscheck.md](docs/crosscheck.md) — 与 llama.cpp 的逐位置对拍方法与数据
 - [docs/performance.md](docs/performance.md) — 性能实测、瓶颈分析与已否决的优化路径
 - [docs/browser.md](docs/browser.md) — 浏览器目标选择依据、实测数据与零网络验证

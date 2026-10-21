@@ -3,7 +3,7 @@
 > 用 MoonBit 编写的全本地 LLM 推理引擎 + 强类型 Agent 运行时。
 > 零 API 调用、零数据外传、一次编译同时跑在 **浏览器 (js)** 和 **native 边缘设备** 上。
 
-- 状态：M0–M2 完成，内存优化完成，M3 待开始（可行性已实测）
+- 状态：M0–M2 完成，内存优化完成，M3 完成（能力边界见 docs/agent.md）
 - 许可证计划：Apache-2.0
 - 建议仓库名：`moonlm`（Moon + LLM）
 - 前置说明：`moonsh` 为已废弃项目，本项目从零开始，不继承其代码。
@@ -12,14 +12,13 @@
 
 ## 1. 一句话定位
 
-**"浏览器里就能跑的本地小模型 + 类型安全的 Agent 框架"** ——
-MoonBit 编译到 Wasm-GC 后体积小、启动快、无 GC 暂停抖动，天然适合把推理整个塞进浏览器标签页或边缘设备的沙箱里；再用 MoonBit 的强类型 trait 系统约束 Agent 的工具调用，让"本地智能应用"既有隐私保障，又有工程可靠性。
+MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 641.5 KB / 60.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
 
 ## 2. 生态调研结论（2026-10 核实）
 
 | 调研项 | 结论 | 对本项目的意义 |
 |---|---|---|
-| mooncakes.io（约 2.7 万包） | **无任何本地推理运行时**。AI 相关仅 `mizchi/llm`（云端 LLM API 客户端）与 `xiguaAp6y3/moon_outlines`（约束解码，编译 JSON-Schema 到 token mask） | 空白属实。且 `moon_outlines` 与本项目互补：它管"生成什么格式"，我们管"在哪里生成" |
+| mooncakes.io（约 2.7 万包） | 截至 2026-10 调研（注册表约 2.7 万包快照）未见端侧推理运行时；相邻工作有 moonkoog（Agent 编排）、mizchi/llm（云端 API 客户端）、xiguaAp6y3/moon_outlines（约束解码），以及分词类包。本项目 soehi/moonlm 已在该空白处发布 | `moon_outlines` 与本项目互补：它管"生成什么格式"，我们管"在哪里生成" |
 | GitHub `moonbit + llama` | 0 个仓库 | 无现成 GGUF/llama.cpp 绑定，需自建 |
 | `eanzhao-os/pi-moonbit` | 存在（MoonBit，8 stars） | 差异化点：它聚焦 Agent 工具链/云端对接，本项目聚焦**本地推理内核**，形成互补而非竞争 |
 | ~~ds4.mbt~~ | **未能核实**（GitHub 搜索无此项目） | 规划不依赖它；若后续找到可作参考，找不到不影响方案 |
@@ -36,21 +35,21 @@ MoonBit 编译到 Wasm-GC 后体积小、启动快、无 GC 暂停抖动，天�
 ├─────────────────────────────────────────────────────────────┤
 │                     Agent 运行时 (纯 MoonBit)                │
 │  AgentLoop(思考→调用→观察→循环) · Tool trait · JSON-Schema   │
-│  参数校验 · 会话记忆(transcript + BM25 检索) · 内置本地工具   │
+│  参数校验 · 会话记忆(transcript) · 内置本地工具   │
 ├─────────────────────────────────────────────────────────────┤
 │                      引擎抽象层 (Engine trait)                │
-│  ┌───────────────────────────┐  ┌─────────────────────────┐ │
-│  │ PureEngine (纯 MoonBit)   │  │ LlamaCppEngine (可选,    │ │
-│  │ GGUF解析+Tokenizer+      │  │ 仅 native, extern "C"   │ │
-│  │ Transformer前向+采样      │  │ FFI 对接 llama.cpp C API)│ │
-│  └───────────────────────────┘  └─────────────────────────┘ │
+│  ┌───────────────────────────┐                               │
+│  │ PureEngine (纯 MoonBit)   │                               │
+│  │ GGUF解析+Tokenizer+      │                               │
+│  │ Transformer前向+采样      │                               │
+│  └───────────────────────────┘                               │
 ├─────────────────────────────────────────────────────────────┤
 │  后端:  js (浏览器)        |   native (Linux/macOS/Windows)  │
 │  （原计划的 wasm-gc 经实测不可行，原因见 M2）                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**双引擎是核心架构决策**：PureEngine 保证浏览器/沙箱环境"零依赖全自包含"（Wasm/JS 无法链接 C 库，这是硬约束）；LlamaCppEngine 作为 native 下的可选加速路径，复用 llama.cpp 成熟的算子覆盖全部模型架构。两者实现同一个 `Engine` trait，上层 Agent 代码完全无感。
+**单引擎是核心设计**：`PureEngine` 是 `Engine` trait 的唯一实现，保证浏览器/沙箱环境零依赖全自包含（Wasm/JS 无法链接 C 库，这是硬约束）。M4 的双引擎 FFI 路径未做、不参赛。
 
 ## 4. 关键技术决策（ADR 摘要）
 
@@ -70,7 +69,7 @@ MoonBit 编译到 Wasm-GC 后体积小、启动快、无 GC 暂停抖动，天�
 |---|---|
 | native PureEngine + SmolLM2-135M Q8_0 | ≥ 15 tok/s（单线程） |
 | js 后端 PureEngine + SmolLM2-135M Q8_0 | ≥ 3 tok/s（可交互的底线；实测 6.3） |
-| native LlamaCppEngine（对照上限） | 与 llama.cpp 官方一致量级 |
+| native LlamaCppEngine（对照上限，未实现） | 与 llama.cpp 官方一致量级 |
 | 浏览器首屏 | ≤ 150MB 模型加载 < 15s（含分块读取） |
 
 ## 5. 仓库结构（规划）
@@ -79,22 +78,25 @@ MoonBit 编译到 Wasm-GC 后体积小、启动快、无 GC 暂停抖动，天�
 moonlm/
 ├── moon.mod                 # soehi/moonlm：消费 soehi/gguf 版本依赖
 ├── PLAN.md                  # 本文档
-├── (soehi/gguf 在独立仓库)   # 根包 = GGUF 解析；tensor/ = 反量化
+├── (soehi/gguf 在独立仓库，版本依赖 0.1.0)
+│                            # 根包 = GGUF 解析；tensor/ = 反量化
 │                            # （F32/F16/Q4_0/Q5_0/Q8_0/Q4_K/Q6_K）
 │                            # 本仓库只消费其发布版本，不保留副本
 ├── src/
 │   ├── tokenizer/           # byte-level BPE：词表加载、编码、解码、special tokens
 │   ├── model/               # Transformer 前向：RMSNorm、RoPE、GQA、KV cache（按架构注册）
 │   ├── sampler/             # greedy / temperature / top-k / top-p
-│   ├── engine/              # Engine trait + PureEngine；native 下 LlamaCppEngine(FFI)
+│   ├── engine/              # Engine trait + PureEngine；native 下 LlamaCppEngine(FFI，未实现)
 │   ├── agent/               # AgentLoop、Tool trait、JSON-Schema 校验、会话与记忆
-│   ├── tools/               # 内置工具：read_file/write_file/list_dir/grep_text/calc（沙箱路径白名单）
-│   ├── cli/                 # moonlm 命令入口：chat / ask / inspect / bench / agent
+│   ├── tools/               # 内置工具：read_file/list_dir/grep_text/calc（沙箱路径白名单）
+│   ├── cli/                 # moonlm 命令入口：inspect / dequant / tokenize / generate / chat / bench / logits / profile / agent
 │   └── web/                 # js 浏览器 Demo（聊天 + Agent 可视化）
-├── examples/                # 最小示例：加载模型→生成→工具调用
+├── tools/                   # 对拍、夹具生成、基准与 Web 构建脚本
 ├── benchmarks/              # 基准脚本与结果表
-└── docs/                    # 架构说明、GGUF 格式笔记、性能调优记录
+└── docs/                    # 架构说明、对拍/性能/浏览器/内存/Agent 记录
 ```
+
+同工作区另有 `edgeflow/`（独立模块 `soehi/edgeflow`，依赖 `soehi/moonlm`，把生成结果接进文本流水线）。依赖方向：`edgeflow → moonlm → gguf`。
 
 ## 6. 阶段规划（M0–M5）
 
@@ -106,36 +108,36 @@ moonlm/
 |---|---|---|---|
 | M0 GGUF/量化 | ✅ 完成 | `gguf`/`tensor`/`inspect` | 与 llama.cpp 逐字段一致；反量化误差 ≤1e-6 |
 | M1 推理内核 | ✅ 完成 | `tokenizer`/`model`/`sampler`/`engine` | 逐位置 argmax **97.22%**（280/288） |
-| M2 浏览器 | ✅ 完成 | `web`/`web/`/CI js 构建 | decode 7.7 tok/s（js）；native 18.5 tok/s |
+| M2 浏览器 | ✅ 完成 | `web`/`web/`/CI js 构建 | Node 受控 7.56 / Chrome UI 路径 6.3 |
 | 内存优化（插入） | ✅ 完成 | 三处成因全修 | 663 → **189 MB**（模型的 1.37 倍） |
-| M3 Agent 运行时 | ⬜ 待开始 | — | 可行性已实测（见 M3 节） |
-| M4 llama.cpp FFI | ⬜ 可选 | — | — |
-| M5 提交打磨 | ⬜ 待开始 | — | — |
+| M3 Agent 运行时 | ✅ 完成 | 实测：单步 3/4、多步 0/2、端到端约 50% | `src/agent/` + `src/tools/`，见 docs/agent.md |
+| M4 llama.cpp FFI | ⬜ 未做，不参赛（FFI 不改善部署包络，且摧毁纯 MoonBit 前提） | — | — |
+| M5 提交打磨 | ✅ 完成（CI/基准/文档）；⏸ 未做：演示录屏、双语 README | — | — |
 
-代码规模：核心 5726 行（`gguf` 1228 / `model` 1661 / `cli` 869 / `tokenizer` 852 /
-`tensor` 571 / `sampler` 292 / `engine` 226 / `web` 225），107 个测试双后端通过，
-CI 覆盖 native + wasm-gc + js 三个后端构建。
+代码规模：moonlm 手写实现 8157 行（物理 8472 行，其中 315 行为脚本生成的
+Unicode 表）、gguf 模块另有 1827 行（独立发布）；手写测试 2475 行；
+173 个测试在 native 通过、136 个在 wasm-gc 通过。
+差值来自 native 专属的文件系统与沙箱测试；CI 覆盖 native + wasm-gc + js 三个后端构建。
+冷启动与吞吐的当前口径见 [benchmarks/RESULTS.md](benchmarks/RESULTS.md)。
 
 **已完成部分的边界（答辩时不要超出这些）**：
-- 模型规模：实测只覆盖 135M 级（SmolLM2）。0.5B 已验证可加载解析，
-  但受 Q5_0 与 bias 缺口阻塞（见 M3）。
-- 性能：native 18.5 tok/s 对 llama.cpp 单线程 57.2 tok/s，差距约 3 倍，原因是
-  对方手写 SIMD + 多线程，本项目单线程标量。
+- 模型规模：浏览器实测 135M（SmolLM2）；native 实测 0.5B（Qwen2.5-0.5B Q4_K_M，
+  Agent 单步 3/4）。Q5_0 反量化、QKV bias、NEOX RoPE 均已实现（见 M3），不再是阻塞项。
+- 性能：native decode 15.4 tok/s、prefill 16.0（旧工具链 18.5），对 llama.cpp 单线程
+  57.2 tok/s，慢约 3.7 倍，原因是对方手写 SIMD + 多线程，本项目单线程标量。
 - 浏览器侧只承诺 ≤135M 模型可用。
 
-### 后续路线（三条可选路径，按优先级）
+### 后续路线（历史决策记录）
 
-**路径 A：补全 M3 —— Agent 运行时（推荐，差异化最高）**
+**路径 A：M3 Agent 运行时（已完成，作为演示层）**
 
-这是项目**唯一无法被 llama.cpp 替代的部分**。llama.cpp 是推理库，不做 Agent
-编排；MoonBit 生态（调研 2.7 万包）没有任何本地推理或 Agent 实现。M3 建立在
-已有引擎之上，是"用 MoonBit 强类型约束工具调用"这一主张的落点。
+Agent 差异化会随生态收敛（见 src/agent/SCOPE.md）；本项目不可替代的是部署包络。
+llama.cpp 是推理库，不做 Agent 编排；MoonBit 生态中已有 moonkoog 覆盖 Agent 编排，
+但未见端侧推理运行时。M3 建立在已有引擎之上，是"用 MoonBit 强类型约束工具调用"这一主张的落点。
 
-前置工作量已实测清楚：**Q5_0 反量化**（~1 天，M0 已铺好黄金向量测试的路子）+
-**注意力 bias 支持**（~1 天，并需修 `config.mbt` 的架构声明与实际不符）。
-两者都是可独立交付、可对拍验证的引擎补强。之后才做 Agent 层。
+Q5_0/bias 两项前置缺口已在 M3 补齐（见上述实现文件）。
 
-**路径 B：M4 双引擎 FFI（可选增强）**
+**路径 B：M4 双引擎 FFI（可选增强，已放弃）**
 
 接 llama.cpp 的 C API 作为 native 加速档，证明 `Engine` trait 抽象的价值。
 风险是 FFI 工作量与"纯 MoonBit"叙事之间的张力——需要文档说清"M4 是可选的
@@ -162,7 +164,7 @@ CI 覆盖 native + wasm-gc + js 三个后端构建。
 
 > **状态：已完成。** GGUF 与张量层已抽成独立模块 `soehi/gguf` 并发布到注册表；
 > moonlm 以版本依赖消费它，本仓库不再保留副本。
-> 格式与踩坑记录随模块发布（其 `docs/gguf-notes.md`）；对拍脚本见 `tools/check_models.py`。
+> 格式与踩坑记录随模块发布（`soehi/gguf` 模块的 `docs/gguf-notes.md`）；对拍脚本见 `tools/check_models.py`。
 > 交付物：`inspect` 子命令另支持 `--json`（便于与 `gguf_dump` 逐字段对比）与
 > `dequant`（导出单张量解码值，用于真实模型数值对拍）。
 
@@ -220,7 +222,7 @@ CI 覆盖 native + wasm-gc + js 三个后端构建。
   0.002–0.17 nat（是真正的抛硬币），所以「自由生成一致率」衡量的是混沌而非正确性。
   改为 teacher forcing：把参考自身的 token 序列喂给本引擎，逐位置比较 argmax。
   这样一次平局只损失一个位置而不是整段后缀。
-- **性能是压线达标，不是宽裕达标。** decode 14.4–14.7 tok/s 对 15 的目标属勉强越过；
+- **性能是压线达标，不是宽裕达标。** 当时实测 decode 14.4–14.7 tok/s，对 15 的目标属勉强越过；
   且与 llama.cpp 单线程 57.2 tok/s 相比慢约 4 倍（纯标量、无 SIMD）。
   两条被实测否决的优化路径（llama.cpp 的整数量化方案、v128 路径）记录在
   `docs/performance.md`，避免重复踩坑。
@@ -256,7 +258,7 @@ from/to JS`）；`js` 后端下 `Bytes` 就是 `Uint8Array`，MoonBit 闭包就�
       全零记录 / 硬禁用 fetch 后仍正确生成），详见 `docs/browser.md`
 - [x] 浏览器与 native 生成结果一致：**token id 完全相同**（两个 prompt 均逐位一致），
       比 DoD 写的「前 32 token 一致率 ≥95%」更强
-- [x] 加载体验有明确指标：读取 198 ms、解析 4.4 s、产物体积 306 KB
+- [x] 加载体验有明确指标：读取 198 ms、解析 4.4 s、产物体积 306 KB（旧工具链口径；当前固定工具链实测 603.1 KB / brotli 60.5 KB，见 benchmarks/RESULTS.md）
 
 **补充说明（性能目标是靠实测调优达成的）**
 
@@ -281,7 +283,8 @@ from/to JS`）；`js` 后端下 `Bytes` 就是 `Uint8Array`，MoonBit 闭包就�
 JS 引擎才能把循环里的值留在寄存器中，而这又要求累加器本身就是普通 JS 数字。
 交付的是合并后的实测值。
 
-两项改动对 native 也有增益：decode 从 14.4 → **18.4 tok/s**。改动后 llama.cpp
+两项改动对 native 也有增益：decode 从 14.4 → **18.4 tok/s**（当时口径；当前固定工具链
+实测 15.4，见 benchmarks/RESULTS.md）。改动后 llama.cpp
 argmax 对拍仍为 280/288 = 97.22%（参考为 build 11675；换用本地新构建的
 0.7.0-dev 参考时为 277/288 = 96.18%，差异来自参考实现本身——同一本地参考下，
 内存优化前后逐 prompt 结果逐位相同），浏览器与 native 的 token id 仍逐位一致。
@@ -297,8 +300,8 @@ argmax 对拍仍为 280/288 = 97.22%（参考为 build 11675；换用本地新�
 
 **目标**：从"能生成"升级为"能干活"，并展示 MoonBit 强类型在 Agent 安全性上的差异化价值。
 
-> **状态：待开始。** 开工前做了可行性实测，结论**推翻了原计划的两个前提**，
-> 下方任务列表已据此修订。实测记录见 `docs/agent.md`（待建）。
+> **状态：已完成。** 开工前做了可行性实测，结论**推翻了原计划的两个前提**，
+> 下方任务列表已据此修订。实测记录见 `docs/agent.md`（已建）。
 >
 > **前提修正 1：SmolLM2-135M 无法产生工具调用。** 四种提示方式全部失败：
 > 显式 `<tool>{...}</tool>` 格式被完全忽略并输出散文；要求只输出 JSON 得到空输出
@@ -367,19 +370,21 @@ argmax 对拍仍为 280/288 = 97.22%（参考为 build 11675；换用本地新�
 
 ---
 
-### M4 — 加速路径：llama.cpp FFI 双引擎（可选增强）
+### M4 — 加速路径：llama.cpp FFI 双引擎（可选增强，已放弃、不参赛）
+
+> 以下为原计划，**未实施**；保留作决策记录。
 
 **目标**：证明架构抽象的价值——上层代码不变，换引擎即换性能档位。
 
 **任务**
 1. native FFI 绑定 llama.cpp 核心 C API（模型加载 / 上下文 / decode / 采样器）
-2. `LlamaCppEngine` 实现 `Engine` trait；`--engine llama` / `--engine pure` 一键切换
+2. `LlamaCppEngine` 实现 `Engine` trait；`--engine llama` / `--engine pure` 一键切换（未实施）
 3. 双引擎基准对比报告（tokens/s、内存、支持模型矩阵），写入 `benchmarks/`
 
-**验收标准（DoD）**
-- [ ] 同一 Agent/聊天代码在两个引擎下均可运行，仅切换一个参数
-- [ ] 基准报告含 ≥ 3 个模型 × 2 引擎的数据表
-- [ ] FFI 层内存边界清晰（谁分配谁释放），无泄漏（长会话回归测试）
+**原计划验收标准（未实施，仅存档）**
+- 同一 Agent/聊天代码在两个引擎下均可运行，仅切换一个参数
+- 基准报告含 ≥ 3 个模型 × 2 引擎的数据表
+- FFI 层内存边界清晰（谁分配谁释放），无泄漏（长会话回归测试）
 
 ---
 
@@ -411,6 +416,7 @@ argmax 对拍仍为 280/288 = 97.22%（参考为 build 11675；换用本地新�
 | 评审关注点 | 本项目回答 |
 |---|---|
 | 语言特性利用 | Wasm-GC 跨平台单二进制分发；`extern "C"` FFI；trait + 代数数据类型建模 Engine/Tool；错误处理用 `Result` 贯穿解析栈 |
-| 生态贡献 | mooncakes 首个本地推理 + Agent 框架；`gguf/`、`tensor/`、`tokenizer/` 均为可独立复用的包 |
-| 演示冲击力 | 断网浏览器跑模型 + Agent 自主完成文档问答，一眼看懂"零 API、零外传" |
+| 部署包络 | 641.5 KB 单文件 / 60.5 KB brotli / 189 MB 峰值内存 / 推理零网络 |
+| 生态贡献 | mooncakes 首个本地推理 + Agent 框架；`soehi/gguf`、`soehi/gguf/tensor`、`tokenizer` 均为可独立复用的包 |
+| 演示冲击力 | 断网浏览器跑模型 + Agent 自主完成文档问答，一眼看懂"零 API、零外传"；Agent 为演示层，能力边界如实记录 |
 | 完成度信号 | 双后端 CI、对拍测试、基准数据表、可复现演示脚本 |
