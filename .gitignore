@@ -9,3 +9,6 @@ test_model.gguf
 
 # Local tool state (security scanner ledger), not part of the project
 .mimosa/
+
+# MoonBit profiler output, written by `moon run --trace`
+trace.json
