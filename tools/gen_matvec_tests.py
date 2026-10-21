@@ -32,9 +32,13 @@ OUT = REPO_ROOT / "src" / "model" / "gen_matvec_test.mbt"
 
 
 def load_fixture_builders():
-    """Import tools/gen_fixtures.py, which owns the reference block builders."""
+    """Import tools/ggml_blocks.py, which owns the reference block builders.
+
+    Previously gen_fixtures.py; the builders stayed in moonlm when the gguf
+    fixture generator moved out, so the import follows the file.
+    """
     spec = importlib.util.spec_from_file_location(
-        "gen_fixtures", REPO_ROOT / "tools" / "gen_fixtures.py"
+        "ggml_blocks", REPO_ROOT / "tools" / "ggml_blocks.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

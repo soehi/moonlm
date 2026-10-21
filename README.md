@@ -161,11 +161,14 @@ python tools/serve_web.py --model-dir /path/to/ggufs
 ## 工具
 
 ```bash
-python tools/gen_fixtures.py     # 重新生成测试夹具（合成 GGUF + 黄金向量 + 畸形输入）
+python tools/gen_forward_tests.py   # 重新生成前向测试夹具
+python tools/gen_matvec_tests.py    # 重新生成 matvec 夹具
 python tools/check_models.py <model.gguf> ...   # 与 llama.cpp 的 gguf 读出器对拍
 python tools/crosscheck_llama.py <model.gguf> --mode argmax   # 逐位置 argmax 对拍
 python tools/crosscheck_llama.py <model.gguf> --mode greedy   # 自由生成对比
 ```
+
+GGUF / tensor 两个包的夹具由已发布的 `soehi/gguf` 模块自带，不在本仓库生成。
 
 `check_models.py` 需要 `pip install gguf numpy`；`crosscheck_llama.py` 需要先在
 loopback 上起一个 `llama-server`（见 [docs/crosscheck.md](docs/crosscheck.md)）。
@@ -183,7 +186,8 @@ loopback 上起一个 `llama-server`（见 [docs/crosscheck.md](docs/crosscheck.
 
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) — GGUF 格式与 ggml 反量化算法的权威定义
 - [PLAN.md](PLAN.md) — 完整技术方案与阶段规划
-- [docs/gguf-notes.md](docs/gguf-notes.md) — GGUF 格式图、位布局与实现踩坑笔记
+- `soehi/gguf` 模块（注册表）——GGUF 格式图、位布局与实现踩坑笔记随包发布，
+  见其 `docs/gguf-notes.md`
 - [docs/crosscheck.md](docs/crosscheck.md) — 与 llama.cpp 的逐位置对拍方法与数据
 - [docs/performance.md](docs/performance.md) — 性能实测、瓶颈分析与已否决的优化路径
 - [docs/browser.md](docs/browser.md) — 浏览器目标选择依据、实测数据与零网络验证

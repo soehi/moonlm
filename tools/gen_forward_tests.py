@@ -44,8 +44,14 @@ DEBUG_QWEN_GGUF = REPO_ROOT / "src" / "model" / "test_model_qwen.gguf"
 
 
 def load_builders():
+    """Import tools/ggml_blocks.py, the shared ggml block/GgufWriter library.
+
+    It used to be gen_fixtures.py. When the gguf fixture generator moved to the
+    gguf module's own repository, the reusable builders stayed here (this file
+    needs `GgufWriter` to emit a real GGUF container), so the import follows.
+    """
     spec = importlib.util.spec_from_file_location(
-        "gen_fixtures", REPO_ROOT / "tools" / "gen_fixtures.py"
+        "ggml_blocks", REPO_ROOT / "tools" / "ggml_blocks.py"
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
