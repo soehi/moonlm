@@ -14,15 +14,17 @@ jobs:
 
       - name: Install MoonBit toolchain
         run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s 0.1.20260819
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
       # The gguf packages (and the fixtures they carry) live in the published
       # `soehi/gguf` module, not in this tree. Its fixture generator moved with
       # them, so there is nothing here to regenerate or diff; the module is
       # verified by its own CI and consumed from the registry.
-      - name: Show toolchain version
-        run: moon version
+      # Pinned to the same version as benchmarks/CONFIG.md; installing
+      # "latest" is what let the toolchain drift between releases.
+      - name: Assert toolchain
+        run: moon version | grep -F '0.1.20260819'
 
       - name: Static check (native)
         run: moon check --target native
@@ -58,3 +60,40 @@ jobs:
         run: |
           python benchmarks/run.py --no-model --skip-build
           python benchmarks/gate.py --sizes-only
+
+  # Windows is a first-class target for this module: the C stubs have
+  # 10 _WIN32 branches (Wide-char paths, junction-aware realpath), and the
+  # ubuntu job never compiles them. Pinned to the same toolchain as the
+  # ubuntu job and benchmarks/CONFIG.md.
+  windows:
+    name: MoonBit (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MoonBit toolchain (pinned)
+        shell: pwsh
+        run: |
+          $env:MOONBIT_INSTALL_VERSION = "0.1.20260819"
+          Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+          irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
+          "$HOME\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+      - name: Assert toolchain
+        shell: pwsh
+        run: |
+          $v = moon version
+          if ($v -notmatch '0\.1\.20260819') { Write-Error "unexpected: $v"; exit 1 }
+
+      - name: Static check (native)
+        run: moon check --target native
+
+      - name: Test (native)
+        run: moon test --target native
+
+      - name: Static check (wasm-gc)
+        run: moon check --target wasm-gc
+
+      - name: Test (wasm-gc)
+        run: moon test --target wasm-gc
+

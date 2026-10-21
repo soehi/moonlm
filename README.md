@@ -108,7 +108,10 @@ grep），多步"列目录 → 读文件 → 总结"0/2 完成——模型拿到
 
 - `soehi/gguf`（独立仓库，独立 `moon.mod`）为**纯 MoonBit**：无 FFI、无第三方依赖，
   同时通过 `native` 与 `wasm-gc`。它是可单独复用的公共资产，moonlm 以版本依赖消费它。
-  CLI 的文件读取是唯一例外，用 `extern "C"` + native stub，并单独按 target 隔离。
+- 计算路径零 FFI。native 侧只有一层 libc 薄封装
+  （src/tools/stubs.c 643 行 + src/cli/stubs.c 125 行，共 768 行 C，
+  覆盖沙箱 / 目录 / 文件 / 标准输入输出），按 target 隔离；
+  wasm-gc 与 js 构建不含这些调用。
 - 只做**反量化**（量化交给 llama.cpp 现成模型），只**读** GGUF，不写。
 - 容错优先：任何畸形输入返回带出错偏移的错误值，不 panic、不下标越界。
 - 所有整数按小端解析；偏移与长度用 `Int64`/`UInt64`，不用 32 位 `Int` 承接。
