@@ -130,8 +130,8 @@ between the two tokens.
 | Engine | prefill (pp32) | decode (tg64) |
 |---|---|---|
 | llama.cpp b11675, 1 thread | 370.2 tok/s | 57.2 tok/s |
-| moonlm, pure MoonBit, 1 thread, native | 19.0 tok/s | 18.4 tok/s |
-| moonlm, pure MoonBit, browser (`js`) | 8.2 tok/s | 6.3 tok/s |
+| moonlm, MoonBit, 1 thread, native | 19.0 tok/s | 18.4 tok/s |
+| moonlm, MoonBit, browser (`js`) | 8.2 tok/s | 6.3 tok/s |
 
 The native build is roughly 3x slower than llama.cpp at decode. That is the
 honest number: the kernels are scalar (no SIMD), the build is single-threaded,

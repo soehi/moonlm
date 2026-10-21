@@ -3,6 +3,15 @@
 Tags are vX.Y.Z on the commit whose moon.mod carries that version.
 Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
 
+## 0.1.2 — 2026-10-21
+
+- Consume `soehi/gguf@0.1.1`, whose metadata points at its own repository.
+- The description and `docs/crosscheck.md` say "in MoonBit" rather than
+  "pure MoonBit": the native build has a libc stub layer (768 lines of C) for
+  file and directory access, so "pure" overclaimed.
+- CI comments state nine `_WIN32` branches, which is the count in
+  `src/tools/stubs.c` (the previous note said ten).
+
 ## 0.1.1 — 2026-10-21
 
 - Stop packaging development artifacts. `moon publish` takes the directory as

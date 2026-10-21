@@ -1,6 +1,6 @@
 name = "soehi/moonlm"
 
-version = "0.1.1"
+version = "0.1.2"
 
 readme = "README.md"
 
@@ -16,12 +16,12 @@ keywords = [
   "wasm",
 ]
 
-description = "Local LLM inference engine and strongly-typed agent runtime, written in pure MoonBit"
+description = "Local LLM inference engine and strongly-typed agent runtime, in MoonBit"
 
 preferred_target = "wasm-gc"
 
 source = "src"
 
 import {
-  "soehi/gguf@0.1.0",
+  "soehi/gguf@0.1.1",
 }

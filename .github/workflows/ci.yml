@@ -62,7 +62,7 @@ jobs:
           python benchmarks/gate.py --sizes-only
 
   # Windows is a first-class target for this module: the C stubs have
-  # 10 _WIN32 branches (Wide-char paths, junction-aware realpath), and the
+  # 9 _WIN32 branches (Wide-char paths, junction-aware realpath), and the
   # ubuntu job never compiles them. Pinned to the same toolchain as the
   # ubuntu job and benchmarks/CONFIG.md.
   windows:
