@@ -11,6 +11,8 @@ Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
   file and directory access, so "pure" overclaimed.
 - CI comments state nine `_WIN32` branches, which is the count in
   `src/tools/stubs.c` (the previous note said ten).
+- CI installs the current MoonBit release (`0.1.20261020`) — upstream no
+  longer serves versioned artifacts — and runs `moon update` before checking.
 
 ## 0.1.1 — 2026-10-21
 

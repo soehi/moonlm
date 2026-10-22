@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  MOONBIT_VERSION: "0.1.20261020"
+
 on:
   push:
     branches: [main]
@@ -14,17 +17,24 @@ jobs:
 
       - name: Install MoonBit toolchain
         run: |
-          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s 0.1.20260819
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
 
       # The gguf packages (and the fixtures they carry) live in the published
       # `soehi/gguf` module, not in this tree. Its fixture generator moved with
       # them, so there is nothing here to regenerate or diff; the module is
       # verified by its own CI and consumed from the registry.
-      # Pinned to the same version as benchmarks/CONFIG.md; installing
-      # "latest" is what let the toolchain drift between releases.
+      #
+      # Upstream no longer serves versioned toolchain artifacts, so the
+      # installer always fetches "latest". MOONBIT_VERSION is the release this
+      # tree was checked against; bump it deliberately when upgrading.
       - name: Assert toolchain
-        run: moon version | grep -F '0.1.20260819'
+        run: moon version | grep -F "$MOONBIT_VERSION"
+
+      # moon.mod consumes soehi/gguf from the registry; a fresh checkout has no
+      # local index, so resolve before checking.
+      - name: Resolve registry dependencies
+        run: moon update
 
       - name: Static check (native)
         run: moon check --target native
@@ -63,18 +73,17 @@ jobs:
 
   # Windows is a first-class target for this module: the C stubs have
   # 9 _WIN32 branches (Wide-char paths, junction-aware realpath), and the
-  # ubuntu job never compiles them. Pinned to the same toolchain as the
-  # ubuntu job and benchmarks/CONFIG.md.
+  # ubuntu job never compiles them. Uses the same MOONBIT_VERSION guard as the
+  # ubuntu job.
   windows:
     name: MoonBit (windows-latest)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install MoonBit toolchain (pinned)
+      - name: Install MoonBit toolchain
         shell: pwsh
         run: |
-          $env:MOONBIT_INSTALL_VERSION = "0.1.20260819"
           Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
           irm https://cli.moonbitlang.com/install/powershell.ps1 | iex
           "$HOME\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
@@ -83,7 +92,10 @@ jobs:
         shell: pwsh
         run: |
           $v = moon version
-          if ($v -notmatch '0\.1\.20260819') { Write-Error "unexpected: $v"; exit 1 }
+          if (-not $v.Contains($env:MOONBIT_VERSION)) { Write-Error "unexpected: $v"; exit 1 }
+
+      - name: Resolve registry dependencies
+        run: moon update
 
       - name: Static check (native)
         run: moon check --target native

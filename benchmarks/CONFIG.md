@@ -20,6 +20,8 @@ calibrated against and why they have the slack they do.
 The toolchain version is pinned because code generation changes between
 releases and moves both binary size and throughput. `run.py` records the
 version it actually used and warns when it differs from the value above.
+CI installs the current MoonBit release and asserts its exact version; the
+value above is the benchmark baseline, not the CI toolchain.
 
 ## Model
 
