@@ -68,13 +68,20 @@ jobs:
       # why this runs here rather than in the model-dependent local gate.
       - name: Deployment size gate
         run: |
-          python benchmarks/run.py --no-model --skip-build
+          if ! out=$(python benchmarks/run.py --no-model --skip-build 2>&1); then
+            msg=${out//$'\n'/%0A}
+            echo "::error::benchmark run failed: $msg"
+            exit 1
+          fi
+          echo "$out"
           set +e
-          python benchmarks/gate.py --sizes-only
+          out=$(python benchmarks/gate.py --sizes-only 2>&1)
           status=$?
           set -e
+          echo "$out"
           if [ "$status" -ne 0 ]; then
-            python -c "import json; m=json.load(open('benchmarks/results.json'))['metrics']; print('::error file=benchmarks/results.json::native_exe_kb=%s web_brotli_kb=%s' % (m['native_exe_kb'], m['web_brotli_kb']))"
+            msg=${out//$'\n'/%0A}
+            echo "::error::$msg"
           fi
           exit "$status"
 
