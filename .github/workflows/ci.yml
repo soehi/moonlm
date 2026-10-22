@@ -91,7 +91,7 @@ jobs:
       - name: Assert toolchain
         shell: pwsh
         run: |
-          $v = moon version
+          $v = moon version | Out-String
           if (-not $v.Contains($env:MOONBIT_VERSION)) { Write-Error "unexpected: $v"; exit 1 }
 
       - name: Resolve registry dependencies

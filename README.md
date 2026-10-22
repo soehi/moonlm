@@ -1,6 +1,6 @@
 # MoonLM
 
-MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 641.5 KB / 60.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
+MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 669 KB / 74.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
 
 ## 当前进度
 
@@ -63,7 +63,7 @@ MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份�
 - Chrome（in-app Chromium）加载 SmolLM2-135M Q8_0（138 MB）后可流式生成：
   **decode 6.3 tok/s、prefill 8.2 tok/s**，超过 ≥3 tok/s 的目标 2 倍。
 - **浏览器与 native 的 token id 逐位一致**（两个 prompt 均验证），比验收线更强。
-- 加载体验：读取 198 ms、解析 4.4 s、引擎产物 306 KB（当前工具链实测 603 KB / brotli 60.5 KB，见 benchmarks/RESULTS.md）。
+- 加载体验：读取 198 ms、解析 4.4 s、引擎产物 306 KB（当前工具链实测 655 KB / brotli 74.5 KB，见 benchmarks/RESULTS.md）。
 - **零网络验证**（三重证据）：产物无任何外部 URL；instrument `fetch`/`XHR`/
   `WebSocket`/`sendBeacon` 后推理期间记录为 **0 次调用**；把 `fetch` 替换为
   必然 reject 的函数后仍能正确生成。
@@ -156,7 +156,7 @@ python tools/serve_web.py --model-dir /path/to/ggufs
 # 打开 http://127.0.0.1:8000/ ，选一个 .gguf，按「生成」
 ```
 
-`web/dist/` 是完全自包含的产物（一个 HTML + 一个 306 KB 的 JS）（当前工具链实测 603 KB / brotli 60.5 KB，见 benchmarks/RESULTS.md），无后端、无 CDN。
+`web/dist/` 是完全自包含的产物（一个 HTML + 一个 306 KB 的 JS）（当前工具链实测 655 KB / brotli 74.5 KB，见 benchmarks/RESULTS.md），无后端、无 CDN。
 用文件选择框加载模型时页面不发起任何请求；用 URL 加载（`--model-dir` 提供）
 相当于从本地服务器读一个静态文件。推理过程本身零网络请求，见
 [docs/browser.md](docs/browser.md)。

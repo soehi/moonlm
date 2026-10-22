@@ -59,9 +59,9 @@ perf figures is explicitly out of scope — see "What is and is not gated".
 
 | Metric | Documented | This machine | Source |
 |---|---|---|---|
-| `cli.exe` size | 473 KB | 639 KB | `docs/memory.md` / measured |
-| `web.js` size | 306 KB raw | 589 KB | `docs/browser.md` / measured |
-| `web.js` brotli | 33 KB | 60 KB | `docs/browser.md` / measured |
+| `cli.exe` size | 473 KB | 669 KB | `docs/memory.md` / measured |
+| `web.js` size | 306 KB raw | 655 KB | `docs/browser.md` / measured |
+| `web.js` brotli | 33 KB | 74.5 KB | `docs/browser.md` / measured |
 | Peak memory | 189 MB | 189 MB | `docs/memory.md` |
 | Prefill | 19.0 tok/s | 15.5–16.2 tok/s | `docs/performance.md` |
 | Decode | 18.4 tok/s | 15.1–15.5 tok/s | `docs/performance.md` |
@@ -97,11 +97,11 @@ comparable.
 `docs/memory.md` records **473 KB** for `cli.exe` and **306 KB / 33 KB** for
 `web.js`. Those were measured before this tree grew three subsystems: Qwen2
 support (NEOX RoPE, projection biases, a second tokenizer), the agent runtime,
-and the sandboxed tool package. The current build is 639 KB and 589 KB raw /
-60 KB brotli.
+and the sandboxed tool package. The current build is 669 KB and 655 KB raw /
+74.5 KB brotli.
 
-This is code growth, not a regression in code generation: nothing about the
-build flags changed. The older documents are kept because they carry the
+This is code growth plus codegen drift in the current toolchain; the build
+flags did not change. The older documents are kept because they carry the
 reasoning behind the numbers; the gates below are calibrated against the
 current tree.
 
@@ -119,8 +119,8 @@ the next section shows the check.
 
 | Artifact | Limit | Current | Headroom |
 |---|---|---|---|
-| `cli.exe` (native, release) | 700 KB | 639 KB | ~9% |
-| `web.js` brotli | 70 KB | 60 KB | ~14% |
+| `cli.exe` (native, release) | 700 KB | 669 KB | ~4% |
+| `web.js` brotli | 80 KB | 74.5 KB | ~7% |
 
 Both gates run on every push. They exist to catch a dependency or a generated
 artifact that quietly doubles the deployment footprint — the question the

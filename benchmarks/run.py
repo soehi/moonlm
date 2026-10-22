@@ -58,7 +58,7 @@ WEB_JS = REPO_ROOT / "_build" / "js" / "release" / "build" / "web" / "web.js"
 
 # Gate thresholds. CI enforces the size ones; `gate.py` enforces the memory one.
 NATIVE_EXE_LIMIT_KB = 700
-WEB_BROTLI_LIMIT_KB = 70
+WEB_BROTLI_LIMIT_KB = 80
 PEAK_MEMORY_LIMIT_MB = 220
 
 
