@@ -69,6 +69,7 @@ jobs:
       - name: Deployment size gate
         run: |
           python benchmarks/run.py --no-model --skip-build
+          python -c "import json; m=json.load(open('benchmarks/results.json'))['metrics']; print('::notice::native_exe_kb=%s web_brotli_kb=%s' % (m['native_exe_kb'], m['web_brotli_kb']))"
           python benchmarks/gate.py --sizes-only
 
   # Windows is a first-class target for this module: the C stubs have
