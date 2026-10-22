@@ -16,8 +16,6 @@ Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
 - Raise the browser brotli gate from 70 KB to 80 KB. The newer toolchain
   compiles the same sources to 74.5 KB, which still fits the edge-device
   claim; the gate exists to catch a doubling, not a 7% codegen shift.
-- Look for the native CLI at `cli` on Unix and `cli.exe` on Windows; the
-  20261020 toolchain no longer writes `cli.exe` on Linux.
 - The size gate builds the release artifacts it measures instead of assuming
   an earlier step produced them.
 

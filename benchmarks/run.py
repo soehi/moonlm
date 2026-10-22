@@ -53,15 +53,7 @@ EXPECTED_MODEL_SHA256 = (
     "5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83"
 )
 
-NATIVE_EXE = (
-    REPO_ROOT
-    / "_build"
-    / "native"
-    / "release"
-    / "build"
-    / "cli"
-    / ("cli.exe" if os.name == "nt" else "cli")
-)
+NATIVE_EXE = REPO_ROOT / "_build" / "native" / "release" / "build" / "cli" / "cli.exe"
 WEB_JS = REPO_ROOT / "_build" / "js" / "release" / "build" / "web" / "web.js"
 
 # Gate thresholds. CI enforces the size ones; `gate.py` enforces the memory one.
