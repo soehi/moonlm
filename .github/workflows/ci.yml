@@ -68,7 +68,7 @@ jobs:
       # why this runs here rather than in the model-dependent local gate.
       - name: Deployment size gate
         run: |
-          if ! out=$(python benchmarks/run.py --no-model --skip-build 2>&1); then
+          if ! out=$(python benchmarks/run.py --no-model 2>&1); then
             msg=${out//$'\n'/%0A}
             echo "::error::benchmark run failed: $msg"
             exit 1
