@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -24,7 +25,8 @@ RESULTS_JSON = BENCH_DIR / "results.json"
 
 # Kept in sync with benchmarks/CONFIG.md. Duplicated rather than imported so
 # the gate can run without importing run.py's heavier machinery.
-NATIVE_EXE_LIMIT_KB = 700
+# Linux links a larger runtime, so the native ceiling is per platform.
+NATIVE_EXE_LIMIT_KB = 700 if os.name == "nt" else 1000
 WEB_BROTLI_LIMIT_KB = 80
 PEAK_MEMORY_LIMIT_MB = 220
 

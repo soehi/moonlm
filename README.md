@@ -1,6 +1,6 @@
 # MoonLM
 
-MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 669 KB / 74.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
+MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 669 KB（Windows）/ 931 KB（Linux）/ 74.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
 
 ## 当前进度
 

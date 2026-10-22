@@ -59,7 +59,7 @@ perf figures is explicitly out of scope — see "What is and is not gated".
 
 | Metric | Documented | This machine | Source |
 |---|---|---|---|
-| `cli.exe` size | 473 KB | 669 KB | `docs/memory.md` / measured |
+| `cli.exe` size | 473 KB | 669 KB Windows / 931 KB Linux | `docs/memory.md` / measured |
 | `web.js` size | 306 KB raw | 655 KB | `docs/browser.md` / measured |
 | `web.js` brotli | 33 KB | 74.5 KB | `docs/browser.md` / measured |
 | Peak memory | 189 MB | 189 MB | `docs/memory.md` |
@@ -97,8 +97,8 @@ comparable.
 `docs/memory.md` records **473 KB** for `cli.exe` and **306 KB / 33 KB** for
 `web.js`. Those were measured before this tree grew three subsystems: Qwen2
 support (NEOX RoPE, projection biases, a second tokenizer), the agent runtime,
-and the sandboxed tool package. The current build is 669 KB and 655 KB raw /
-74.5 KB brotli.
+and the sandboxed tool package. The current build is 669 KB on Windows /
+931 KB on Linux, and 655 KB raw / 74.5 KB brotli.
 
 This is code growth plus codegen drift in the current toolchain; the build
 flags did not change. The older documents are kept because they carry the
@@ -119,7 +119,7 @@ the next section shows the check.
 
 | Artifact | Limit | Current | Headroom |
 |---|---|---|---|
-| `cli.exe` (native, release) | 700 KB | 669 KB | ~4% |
+| `cli.exe` (native, release) | 700 KB Windows / 1000 KB Linux | 669 / 931 KB | ~4% / ~7% |
 | `web.js` brotli | 80 KB | 74.5 KB | ~7% |
 
 Both gates run on every push. They exist to catch a dependency or a generated

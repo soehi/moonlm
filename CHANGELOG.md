@@ -18,6 +18,8 @@ Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
   claim; the gate exists to catch a doubling, not a 7% codegen shift.
 - The size gate builds the release artifacts it measures instead of assuming
   an earlier step produced them.
+- Set the native gate per platform: 700 KB on Windows, 1000 KB on Linux,
+  where the ELF build is 931 KB.
 
 ## 0.1.1 — 2026-10-21
 
