@@ -121,7 +121,14 @@ def build_all() -> None:
 
 def measure_sizes() -> dict:
     if not NATIVE_EXE.exists():
-        raise RuntimeError(f"missing {NATIVE_EXE}; run a native release build")
+        nearby = (
+            ", ".join(sorted(p.name for p in NATIVE_EXE.parent.iterdir()))
+            if NATIVE_EXE.parent.exists()
+            else "no cli build directory"
+        )
+        raise RuntimeError(
+            f"missing {NATIVE_EXE} (found: {nearby}); run a native release build"
+        )
     if not WEB_JS.exists():
         raise RuntimeError(f"missing {WEB_JS}; run the js release build")
     raw = WEB_JS.stat().st_size
