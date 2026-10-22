@@ -69,8 +69,14 @@ jobs:
       - name: Deployment size gate
         run: |
           python benchmarks/run.py --no-model --skip-build
-          python -c "import json; m=json.load(open('benchmarks/results.json'))['metrics']; print('::notice::native_exe_kb=%s web_brotli_kb=%s' % (m['native_exe_kb'], m['web_brotli_kb']))"
+          set +e
           python benchmarks/gate.py --sizes-only
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            python -c "import json; m=json.load(open('benchmarks/results.json'))['metrics']; print('::error file=benchmarks/results.json::native_exe_kb=%s web_brotli_kb=%s' % (m['native_exe_kb'], m['web_brotli_kb']))"
+          fi
+          exit "$status"
 
   # Windows is a first-class target for this module: the C stubs have
   # 9 _WIN32 branches (Wide-char paths, junction-aware realpath), and the
