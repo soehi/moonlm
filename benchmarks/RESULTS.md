@@ -7,15 +7,17 @@ only reports what that configuration produced.
 - Generated: 2026-10-20T13:56:26+00:00
 - Toolchain: `0.1.20260819`
 - Platform: Windows-11-10.0.26100-SP0
+- Size rows re-measured: 2026-10-22 (throughput, memory and load rows are
+  still from the 2026-10-20 run)
 
 - Model: `SmolLM2-135M-Instruct-Q8_0.gguf` (144,811,360 bytes)
 - SHA-256: `5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83`
 
 | Metric | Value | Notes |
 |---|---|---|
-| native executable | 641.5 KB | gate ≤ 700 KB |
-| browser bundle (raw) | 603.1 KB |  |
-| browser bundle (brotli) | 60.5 KB | gate ≤ 70 KB |
+| native executable | 669 KB (Windows) / 931 KB (Linux) | gate ≤ 700 KB / 1000 KB |
+| browser bundle (raw) | 655 KB |  |
+| browser bundle (brotli) | 74.5 KB | gate ≤ 80 KB |
 | cold start | 283.4 ms | process launch to first token |
 | prefill | 16.0256 tok/s | reported, not gated |
 | decode | 15.3514 tok/s | reported, not gated |

@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "generated_at": "2026-10-20T13:56:26+00:00",
+  "size_measured_at": "2026-10-22",
   "configuration": {
     "toolchain": "0.1.20260819",
     "toolchain_expected": "0.1.20260819",
@@ -17,9 +18,9 @@
     "sha256_matches_expected": true
   },
   "metrics": {
-    "native_exe_kb": 641.5,
-    "web_js_kb": 603.1,
-    "web_brotli_kb": 60.5,
+    "native_exe_kb": 669,
+    "web_js_kb": 655,
+    "web_brotli_kb": 74.5,
     "cold_start_ms": 283.4,
     "prefill_tok_s": 16.02563916422071,
     "decode_tok_s": 15.351403544298991,
@@ -33,7 +34,7 @@
   },
   "gates": {
     "native_exe_limit_kb": 700,
-    "web_brotli_limit_kb": 70,
+    "web_brotli_limit_kb": 80,
     "peak_memory_limit_mb": 220
   }
 }

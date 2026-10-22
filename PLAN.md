@@ -12,7 +12,7 @@
 
 ## 1. 一句话定位
 
-MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 641.5 KB / 60.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
+MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 669 KB（Windows）/ 931 KB（Linux）/ 74.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
 
 ## 2. 生态调研结论（2026-10 核实）
 
@@ -116,8 +116,10 @@ moonlm/
 
 代码规模：moonlm 手写实现 8157 行（物理 8472 行，其中 315 行为脚本生成的
 Unicode 表）、gguf 模块另有 1827 行（独立发布）；手写测试 2475 行；
-173 个测试在 native 通过、136 个在 wasm-gc 通过。
-差值来自 native 专属的文件系统与沙箱测试；CI 覆盖 native + wasm-gc + js 三个后端构建。
+测试按模块分别统计（三个模块独立发布，各自的测试只覆盖自己）：
+moonlm 120 个（native）/ 95 个（wasm-gc）；soehi/gguf 67 / 67；soehi/edgeflow 53 / 41。
+moonlm 与 edgeflow 的差值来自 native 专属的文件系统与沙箱测试；
+CI 覆盖 native + wasm-gc + js 三个后端构建。
 冷启动与吞吐的当前口径见 [benchmarks/RESULTS.md](benchmarks/RESULTS.md)。
 
 **已完成部分的边界（答辩时不要超出这些）**：
@@ -258,7 +260,7 @@ from/to JS`）；`js` 后端下 `Bytes` 就是 `Uint8Array`，MoonBit 闭包就�
       全零记录 / 硬禁用 fetch 后仍正确生成），详见 `docs/browser.md`
 - [x] 浏览器与 native 生成结果一致：**token id 完全相同**（两个 prompt 均逐位一致），
       比 DoD 写的「前 32 token 一致率 ≥95%」更强
-- [x] 加载体验有明确指标：读取 198 ms、解析 4.4 s、产物体积 306 KB（旧工具链口径；当前固定工具链实测 603.1 KB / brotli 60.5 KB，见 benchmarks/RESULTS.md）
+- [x] 加载体验有明确指标：读取 198 ms、解析 4.4 s、产物体积 306 KB（旧工具链口径；当前固定工具链实测 655 KB / brotli 74.5 KB，见 benchmarks/RESULTS.md）
 
 **补充说明（性能目标是靠实测调优达成的）**
 
@@ -416,7 +418,7 @@ argmax 对拍仍为 280/288 = 97.22%（参考为 build 11675；换用本地新�
 | 评审关注点 | 本项目回答 |
 |---|---|
 | 语言特性利用 | Wasm-GC 跨平台单二进制分发；`extern "C"` FFI；trait + 代数数据类型建模 Engine/Tool；错误处理用 `Result` 贯穿解析栈 |
-| 部署包络 | 641.5 KB 单文件 / 60.5 KB brotli / 189 MB 峰值内存 / 推理零网络 |
+| 部署包络 | 669 KB（Win）/ 931 KB（Linux）单文件 / 74.5 KB brotli / 189 MB 峰值内存 / 推理零网络 |
 | 生态贡献 | mooncakes 首个本地推理 + Agent 框架；`soehi/gguf`、`soehi/gguf/tensor`、`tokenizer` 均为可独立复用的包 |
 | 演示冲击力 | 断网浏览器跑模型 + Agent 自主完成文档问答，一眼看懂"零 API、零外传"；Agent 为演示层，能力边界如实记录 |
 | 完成度信号 | 双后端 CI、对拍测试、基准数据表、可复现演示脚本 |
