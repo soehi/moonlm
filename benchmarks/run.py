@@ -107,7 +107,7 @@ def brotli_size(path: Path) -> int:
 
 
 def build_all() -> None:
-    run(["moon", "build", "--target", "native", "--release"], cwd=REPO_ROOT)
+    run(["moon", "build", "--target", "native", "--release", "--strip"], cwd=REPO_ROOT)
     run(["moon", "build", "src/web", "--target", "js", "--release"], cwd=REPO_ROOT)
 
 
