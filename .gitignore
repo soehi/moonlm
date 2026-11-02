@@ -12,3 +12,8 @@ test_model.gguf
 
 # MoonBit profiler output, written by `moon run --trace`
 trace.json
+
+# `moon info` writes these into the source tree; they are tool output, not
+# source, and `moon publish` packs the directory as it stands (it does not
+# read .gitignore), so keeping them out of git also keeps them out of releases.
+*.generated.mbti

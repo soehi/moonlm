@@ -1,7 +1,12 @@
 name: CI
 
 env:
-  MOONBIT_VERSION: "0.1.20261020"
+  # Floor, not a pin: the installer can only fetch "latest" (every versioned
+  # /binaries/<version>/... path answers 403), so an exact-match assertion
+  # would go red on each upstream release for no reason. Numeric comparison,
+  # so 0.10.9 is below 0.10.16 while 0.11 and 1.0 still pass.
+  # Last verified green: moon 0.1.20261028 / moonc v0.10.18.
+  MOONC_MIN: "0.10.16"
 
 on:
   push:
@@ -26,10 +31,26 @@ jobs:
       # verified by its own CI and consumed from the registry.
       #
       # Upstream no longer serves versioned toolchain artifacts, so the
-      # installer always fetches "latest". MOONBIT_VERSION is the release this
-      # tree was checked against; bump it deliberately when upgrading.
+      # installer always fetches "latest"; MOONC_MIN is the floor this tree is
+      # checked against. Bump it deliberately when upgrading.
       - name: Assert toolchain
-        run: moon version | grep -F "$MOONBIT_VERSION"
+        run: |
+          moon version
+          moonc -v
+          got=$(moonc -v | sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+).*/\1/p')
+          if [ -z "$got" ]; then
+            echo "::error::could not parse a version out of 'moonc -v'"
+            exit 1
+          fi
+          if ! awk -F. -v g="$got" -v m="$MOONC_MIN" 'BEGIN {
+                split(g, a, "."); split(m, b, ".");
+                if (a[1] > b[1] || (a[1] == b[1] && (a[2] > b[2] ||
+                    (a[2] == b[2] && a[3] >= b[3])))) exit 0;
+                exit 1
+              }'; then
+            echo "::error::moonc >= $MOONC_MIN required, got v$got"
+            exit 1
+          fi
 
       # moon.mod consumes soehi/gguf from the registry; a fresh checkout has no
       # local index, so resolve before checking.
@@ -105,8 +126,13 @@ jobs:
       - name: Assert toolchain
         shell: pwsh
         run: |
-          $v = moon version | Out-String
-          if (-not $v.Contains($env:MOONBIT_VERSION)) { Write-Error "unexpected: $v"; exit 1 }
+          moon version
+          moonc -v
+          $raw = (moonc -v | Out-String).Trim()
+          if ($raw -notmatch '^v(\d+\.\d+\.\d+)') { Write-Error "unparsable moonc -v: $raw"; exit 1 }
+          $got = [version]$Matches[1]
+          $min = [version]$env:MOONC_MIN
+          if ($got -lt $min) { Write-Error "moonc >= $($env:MOONC_MIN) required, got v$got"; exit 1 }
 
       - name: Resolve registry dependencies
         run: moon update

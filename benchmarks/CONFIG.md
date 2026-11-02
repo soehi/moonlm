@@ -12,16 +12,28 @@ calibrated against and why they have the slack they do.
 
 | Item | Value |
 |---|---|
-| MoonBit | `0.1.20260819` |
+| MoonBit | `0.1.20260819` (original baseline) |
+| MoonBit, last verified | `0.1.20261028` (`moonc v0.10.18`) |
 | Target (native) | `native`, `--release` |
 | Target (browser) | `js`, `--release` |
 | Threads | 1 (single-threaded; the engine has no threading) |
 
-The toolchain version is pinned because code generation changes between
+The toolchain version matters because code generation changes between
 releases and moves both binary size and throughput. `run.py` records the
-version it actually used and warns when it differs from the value above.
-CI installs the current MoonBit release and asserts its exact version; the
-value above is the benchmark baseline, not the CI toolchain.
+version it actually used and warns when it differs from the baseline above.
+
+CI is different: upstream serves no versioned toolchain artifacts (every
+`/binaries/<version>/...` path answers 403; only `latest` resolves), so CI
+installs `latest` and asserts a **floor** of `moonc >= 0.10.16` rather than an
+exact string. An exact assertion goes red on every upstream release without
+the code changing. The tradeoff is that a future release could break the
+build; "last verified" is the version to fall back to when that happens.
+
+Note that the size figures in `results.json` were measured on `0.1.20260819`
+(`size_measured_at: 2026-10-22`). Re-measuring under `0.1.20261028` on Windows
+gives 669 KB / 651.3 KB / 74.5 KB brotli, and both size gates still pass; the
+recorded numbers are left as the measurement they actually were rather than
+silently relabelled.
 
 ## Model
 
