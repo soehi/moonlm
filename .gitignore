@@ -17,3 +17,9 @@ trace.json
 # source, and `moon publish` packs the directory as it stands (it does not
 # read .gitignore), so keeping them out of git also keeps them out of releases.
 *.generated.mbti
+
+# The browser preview bundle. `tools/serve_web.py` assembles it from
+# `web/index.html` plus the js build; docs/browser.md calls it "a preview
+# build, not a published artifact". Tracking it meant every release had to move
+# the directory out by hand so `moon publish` would not ship a stale copy.
+web/dist/
