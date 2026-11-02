@@ -14,12 +14,13 @@ test_model.gguf
 trace.json
 
 # `moon info` writes these into the source tree; they are tool output, not
-# source, and `moon publish` packs the directory as it stands (it does not
-# read .gitignore), so keeping them out of git also keeps them out of releases.
+# source. `moon publish` honours `.gitignore` (measured: an ignored untracked
+# file is not packed, an unignored one is), so this rule keeps them out of
+# releases as well as out of git.
 *.generated.mbti
 
 # The browser preview bundle. `tools/serve_web.py` assembles it from
 # `web/index.html` plus the js build; docs/browser.md calls it "a preview
-# build, not a published artifact". Tracking it meant every release had to move
-# the directory out by hand so `moon publish` would not ship a stale copy.
+# build, not a published artifact". Tracking it forced every release to move
+# the directory out by hand; the `web/dist/` rule below removes that step.
 web/dist/

@@ -34,10 +34,13 @@ Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
 
 ## 0.1.1 — 2026-10-21
 
-- Stop packaging development artifacts. `moon publish` takes the directory as
-  it stands and does not read `.gitignore`, so 0.1.0 shipped a stray
-  `trace.json`, an empty `项目申报书.md`, a prebuilt `web/dist/`, and a copy of
-  the gguf module. 0.1.1 was packaged with those excluded (84 files).
+- Stop packaging development artifacts. 0.1.0 shipped a stray `trace.json`,
+  an empty `项目申报书.md`, a prebuilt `web/dist/`, and a copy of the gguf
+  module: none of those were in `.gitignore` at the time, and `moon publish`
+  packs untracked-but-unignored files as well as tracked ones. 0.1.1 added
+  the ignore rules and was packaged with those excluded (84 files).
+  (Measured later: `moon publish` does honour `.gitignore`; it only packs
+  untracked files when no rule covers them.)
 - Ignore `trace.json` (MoonBit profiler output).
 
 ## 0.1.0 — 2026-10-21
