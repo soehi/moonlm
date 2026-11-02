@@ -1,0 +1,22 @@
+// Native-only example: load a GGUF and generate from it.
+//
+// `supported_targets = "native"` because argv and the filesystem are native
+// concerns; the engine itself builds for wasm-gc and js. Keeping the example
+// out of `src/cli/` means CI builds it separately and a break is visible as a
+// broken example rather than buried in the CLI.
+
+import {
+  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+  "soehi/moonlm/engine",
+  "soehi/moonlm/sampler",
+}
+
+pkgtype(kind: "executable")
+
+supported_targets = "native"
+
+options(
+  "native-stub": [ "stubs.c" ],
+)
