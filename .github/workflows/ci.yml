@@ -75,6 +75,12 @@ jobs:
       - name: Build (wasm-gc)
         run: moon build --target wasm-gc
 
+      # Examples are the API's advertisement; an example that does not build is
+      # a broken promise. It is native-only (argv + filesystem), so it needs its
+      # own step rather than being swept up by the wasm-gc build above.
+      - name: Build the examples (native)
+        run: moon build src/examples --target native
+
       # The browser target is `js`, not `wasm-gc`: wasm-gc's Bytes is a GC array
       # reference that JavaScript cannot construct, so the model bytes cannot be
       # handed in. The `web` package is the browser surface, and it is the one
