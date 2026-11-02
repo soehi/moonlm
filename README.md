@@ -2,6 +2,75 @@
 
 MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份源码编译到 native 与浏览器（js 后端），产物 669 KB（Windows）/ 931 KB（Linux）/ 74.5 KB（brotli），推理全程零网络、零数据外传。附带一个已验证过能力边界的类型安全 Agent 运行时作为演示层。
 
+## 安装
+
+```bash
+moon add soehi/moonlm@0.1.2
+```
+
+这是一个**可复用的包**，不是只能当命令行工具体验的演示。装上之后即可在自己的包中
+`import { "soehi/moonlm/engine", ... }`，把推理当库调用。
+
+## 作为库使用
+
+`Engine` trait 是全部后端共用的接口（load / encode / decode / generate 四个操作），
+`PureEngine` 是纯 MoonBit 实现。`generate` 通过 `on_token : (Int, String) -> Unit`
+逐 token 回调，调用方自己决定怎么处理输出。
+
+```moonbit
+fn demo(buf : Bytes) -> Unit {
+  // 1. 加载：解析 GGUF、构建词表与前向计算图。path 只用于错误信息。
+  let engine = match @engine.PureEngine::load_bytes(buf, "model.gguf") {
+    Ok(e) => e
+    Err(e) => {
+      println("load failed: \{e}")
+      return
+    }
+  }
+  // 2. 生成：greedy 采样，最多 32 个 token，seed 固定则结果可复现。
+  let stats = match @engine.Engine::generate(
+    engine,
+    "The capital of France is",
+    32,
+    @sampler.Greedy,
+    42UL,
+    fn(_id, piece) { println(piece) },
+  ) {
+    Ok(s) => s
+    Err(e) => {
+      println("generate failed: \{e}")
+      return
+    }
+  }
+  // 3. stats 里是这次运行的数字。
+  println(
+    "\{stats.generated_tokens} tokens, \{stats.tokens_per_second()} tok/s, hit_eos=\{stats.hit_eos}",
+  )
+}
+```
+
+这段是编译验证过的（`moon check --target native` 通过），但有三处容易写错，值得先知道：
+
+- **`buf` 由调用方提供。** engine 包本身不做文件 I/O——浏览器里没有文件系统，
+  所以 `Bytes` 可以是同步读盘、HTTP 响应、或内存里的测试夹具。本仓库 CLI 用的
+  `read_file` 在 `src/cli/` 可执行包内，库外无法导入；示例包自带一份最小的。
+- **loader 要求完整 metadata。** `PureEngine::load_bytes` 内部用
+  `parse_materializing_metadata`；若你自己先 `parse` 再传入，词表数组会被摘要化。
+- **`?` 不是 MoonBit 语法。** 这里用 `match` 处理 `Result`；不要写成
+  `...load_bytes(...)?`。返回类型是 `Result[PureEngine, String]` 与
+  `Result[GenerationStats, String]`。
+- **`@sampler.Greedy`，不是 `Sampler::Greedy`。** `Sampler` 是枚举，变体带参时写作
+  `@sampler.TopK(temperature=0.8, k=40)`。
+- **`on_token` 收到的是单个 token 的文本**，一个多字节字符可能跨两个 token，逐片打印
+  偶尔会出现半个字符。需要干净文本时用 `PureEngine::generate_text`，它返回
+  `(String, GenerationStats)`；示例里因为要先流式看到输出，用的是 `generate` + 回调。
+
+完整可运行程序见 `src/examples/generate/`：
+
+```bash
+moon run src/examples/generate -- model.gguf "The capital of France is" 32
+```
+
 ## 当前进度
 
 **M0 — 地基：GGUF 解析与量化格式** ✅ **完成**
