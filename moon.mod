@@ -1,6 +1,6 @@
 name = "soehi/moonlm"
 
-version = "0.1.2"
+version = "0.1.3"
 
 readme = "README.md"
 
@@ -23,5 +23,5 @@ preferred_target = "wasm-gc"
 source = "src"
 
 import {
-  "soehi/gguf@0.1.1",
+  "soehi/gguf@0.1.3",
 }

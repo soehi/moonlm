@@ -3,6 +3,17 @@
 Tags are vX.Y.Z on the commit whose moon.mod carries that version.
 Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
 
+## 0.1.3 — 2026-11-02
+
+- Consume `soehi/gguf@0.1.3`.
+- The README has an install line and a library usage example, compiled against
+  the published package before it was written down.
+- `src/examples/generate` is a minimal runnable program (load a GGUF, generate,
+  report tok/s); CI builds it so an example cannot rot unnoticed.
+- CI asserts a `moonc` floor (>= 0.10.16) rather than an exact release, because
+  every versioned toolchain path answers 403 and the installer can only fetch
+  "latest".
+
 ## 0.1.2 — 2026-10-21
 
 - Consume `soehi/gguf@0.1.1`, whose metadata points at its own repository.

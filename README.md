@@ -5,8 +5,11 @@ MoonLM 是一个用 MoonBit 从零实现的端侧 LLM 推理引擎：同一份�
 ## 安装
 
 ```bash
-moon add soehi/moonlm@0.1.2
+moon add soehi/moonlm
 ```
+
+不带版本号会解析到最新发布版，并写入你的 `moon.mod`；需要可复现的依赖树时显式固定
+（如 `moon add soehi/moonlm@0.1.3`）。
 
 这是一个**可复用的包**，不是只能当命令行工具体验的演示。装上之后即可在自己的包中
 `import { "soehi/moonlm/engine", ... }`，把推理当库调用。
