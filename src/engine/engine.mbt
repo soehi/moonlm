@@ -75,6 +75,8 @@ pub(all) struct PureEngine {
   tokenizer : @tokenizer.Tokenizer
   /// Path the model was loaded from, for messages.
   path : String
+  /// Supported chat profile derived from GGUF model identity, not the filename.
+  chat_profile : String
 } derive(Debug)
 
 ///|
@@ -102,7 +104,16 @@ pub fn PureEngine::load_bytes(buf : Bytes, path : String) -> Result[PureEngine, 
       "tokenizer vocabulary (\{tokenizer.vocab_size()}) is larger than the model's embedding table (\{model.config.vocab_size})",
     )
   }
-  Ok({ model, tokenizer, path })
+  let name = f.get_string("general.name").unwrap_or("").to_lower()
+  let template = f.get_string("tokenizer.chat_template").unwrap_or("")
+  let chat_profile = if !template.contains("<|im_start|>") || !template.contains("<|im_end|>") {
+    "unsupported"
+  } else if name.contains("smollm2") {
+    "smollm2"
+  } else if name.contains("qwen2.5") && model.config.architecture == "qwen2" {
+    "qwen2.5"
+  } else { "unsupported" }
+  Ok({ model, tokenizer, path, chat_profile })
 }
 
 ///|
@@ -137,6 +148,19 @@ pub impl Engine for PureEngine with fn generate(
   seed : UInt64,
   on_token : (Int, String) -> Unit,
 ) -> Result[GenerationStats, String] {
+  self.generate_controlled(prompt, max_tokens, sampler, seed, 1.0, false, on_token)
+}
+
+///|
+/// Opt-in controls leave Engine::generate and raw parity behavior unchanged.
+pub fn PureEngine::generate_controlled(
+  self : PureEngine, prompt : String, max_tokens : Int,
+  sampler : @sampler.Sampler, seed : UInt64, repetition_penalty : Double,
+  stop_repeated : Bool, on_token : (Int, String) -> Unit,
+) -> Result[GenerationStats, String] {
+  if repetition_penalty != repetition_penalty || repetition_penalty < 1.0 || repetition_penalty > 2.0 {
+    return Err("repetition penalty must be between 1 and 2")
+  }
   let tokens = self.tokenizer.encode(prompt)
   if tokens.length() == 0 {
     return Err("the prompt encoded to zero tokens")
@@ -176,7 +200,10 @@ pub impl Engine for PureEngine with fn generate(
       Err(e) => return Err("decoding at position \{pos}: \{e.message()}")
     }
     self.model.cache.len = pos + 1
-    let sampled = match @sampler.sample(self.model.logits(), sampler, rng) {
+    let logits = if repetition_penalty == 1.0 { self.model.logits() } else {
+      @sampler.penalize_repetition(self.model.logits(), produced, repetition_penalty, 64)
+    }
+    let sampled = match @sampler.sample(logits, sampler, rng) {
       Ok(t) => t
       Err(e) => return Err("sampling at position \{pos}: \{e.message()}")
     }
@@ -191,6 +218,7 @@ pub impl Engine for PureEngine with fn generate(
     // that print as they go should buffer; `on_token` gets the raw piece and the
     // index, and the full text is available afterwards via `decode`.
     on_token(sampled, self.tokenizer.decode([sampled]))
+    if stop_repeated && @sampler.has_repeated_suffix(produced) { break }
     next_token = sampled
     pos = pos + 1
   }

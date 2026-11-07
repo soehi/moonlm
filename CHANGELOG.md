@@ -3,6 +3,18 @@
 Tags are vX.Y.Z on the commit whose moon.mod carries that version.
 Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
 
+## 0.3.0 — 2026-11-07
+
+- Default the browser to single-turn chat with explicit SmolLM2/Qwen2.5 ChatML
+  profiles identified from GGUF metadata; reject unknown profiles and user role
+  delimiters. Raw completion remains available for engine parity checks.
+- Add opt-in repetition penalties, top-p sampling and a repeated-token-block
+  stop guard. Display EOS, length-limit and repetition termination separately.
+- Replace vocabulary-wide insertion sorting with comparison sorting for top-p.
+- Add sampler/template regressions and a small real-model browser QA tool;
+  this acceptance set is not a general reasoning-accuracy benchmark.
+- Fix the README's native-only example invocation to specify its backend.
+
 ## 0.2.0 — 2026-11-07
 
 - **Browser streaming is real.** Inference now runs in a module Web Worker

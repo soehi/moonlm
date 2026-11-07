@@ -38,6 +38,7 @@ def main():
             page.locator('#file').set_input_files(str(Path(args.model).resolve()))
             page.wait_for_function('!document.getElementById("run").disabled', timeout=120000)
             page.locator('#prompt').fill('The capital of France is')
+            page.locator('#mode').select_option('raw')
             page.locator('#maxnew').fill('12')
             page.locator('#temp').fill('0')
             page.evaluate('''() => {

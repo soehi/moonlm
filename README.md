@@ -9,7 +9,7 @@ moon add soehi/moonlm
 ```
 
 不带版本号会解析到最新发布版，并写入你的 `moon.mod`；需要可复现的依赖树时显式固定
-（如 `moon add soehi/moonlm@0.2.0`）。
+（如 `moon add soehi/moonlm@0.3.0`）。
 
 这是一个**可复用的包**，不是只能当命令行工具体验的演示。装上之后即可在自己的包中
 `import { "soehi/moonlm/engine", ... }`，把推理当库调用。
@@ -71,7 +71,7 @@ fn demo(buf : Bytes) -> Unit {
 完整可运行程序见 `src/examples/generate/`：
 
 ```bash
-moon run src/examples/generate -- model.gguf "The capital of France is" 32
+moon run src/examples/generate --target native --release -- model.gguf "The capital of France is" 32
 ```
 
 ## 当前进度
@@ -125,6 +125,8 @@ moon run src/examples/generate -- model.gguf "The capital of France is" 32
 **M2 — 浏览器：Web Demo** ✅ **完成**
 
 加载、预填充与生成均在 Web Worker 中执行，通过消息持续更新文本和指标；停止会终止 Worker，之后需重新加载模型，验证方式见 [docs/browser.md](docs/browser.md)。
+
+0.3.0 默认使用单轮对话，适配 SmolLM2／Qwen2.5 的 ChatML 模板，提供 Top-p、重复惩罚和重复循环停止提示；原始续写模式保留用于对拍。具体边界与真实模型质量检查见 [docs/browser.md](docs/browser.md)。
 
 | 交付物 | 状态 |
 |---|---|

@@ -250,22 +250,12 @@ fn sorted_indices_desc(probs : Array[Double]) -> Array[Int] {
   for i = 0; i < n; i = i + 1 {
     order[i] = i
   }
-  // Insertion sort: vocab-sized arrays are the norm here and a full sort of 49k
-  // elements per token is not worth its setup; this runs on the ~top of the
-  // distribution in practice. For large vocabularies the sort is the sampling
-  // cost, so it stays simple and branch-predictable.
-  for i = 1; i < n; i = i + 1 {
-    let key = order[i]
-    let key_p = probs[key]
-    let mut j = i - 1
-    while j >= 0 && (
-      probs[order[j]] < key_p || (probs[order[j]] == key_p && order[j] > key)
-    ) {
-      order[j + 1] = order[j]
-      j = j - 1
+  // Vocabularies contain 49k-152k entries. Avoid quadratic insertion sort.
+  order.sort_by(fn(a, b) {
+    if probs[a] > probs[b] { -1 } else if probs[a] < probs[b] { 1 } else {
+      a.compare(b)
     }
-    order[j + 1] = key
-  }
+  })
   order
 }
 

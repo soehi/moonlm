@@ -123,11 +123,17 @@
 
   <div class="panel">
     <h2>2 · 生成</h2>
-    <textarea id="prompt">The capital of France is</textarea>
+    <label class="fld">模式
+      <select id="mode"><option value="chat">对话（自动适配已支持的模型）</option><option value="raw">原始续写（用于对拍）</option></select>
+    </label>
+    <textarea id="prompt">What is the capital of France? Answer in one sentence.</textarea>
+    <div class="hint" id="modelhint">这是单轮对话，每次生成均独立；页面不会执行模型输出的代码。回答能力取决于所加载模型。</div>
     <div class="grid" style="margin-top:12px">
       <label class="fld">最大 token 数
         <input type="text" id="maxnew" value="48">
       </label>
+      <label class="fld">重复惩罚（仅对话，1 = 关闭）<input id="penalty" type="number" min="1" max="2" step="0.05" value="1.1"></label>
+      <label class="fld">Top-p（仅对话、温度 &gt; 0）<input id="topp" type="number" min="0.01" max="1" step="0.05" value="0.9"></label>
       <label class="fld">温度（0 = 贪心）
         <input type="text" id="temp" value="0">
       </label>
@@ -225,6 +231,10 @@ async function installModel(buf, name, readMs) {
   handle = true;
   loadedName.v = name;
   const ctx = loaded.context;
+  $('modelhint').textContent = loaded.profile === 'smollm2'
+    ? '已识别 SmolLM2 ChatML；小模型中文与复杂推理可能不稳定，建议先测试简短英文问答。每次为独立单轮；不会执行代码。'
+    : loaded.profile === 'qwen2.5' ? '已识别 Qwen2.5 ChatML。每次为独立单轮对话；不会执行模型输出的代码。'
+    : '未知聊天模板：请选择原始续写；对话模式会拒绝猜测模板。';
   log(`加载完成：上下文长度 ${ctx}，用时 ${loadMs.toFixed(0)} ms`, 'ok');
   $('b-model').textContent = `模型：${name.slice(0, 28)}`;
   $('b-model').className = 'badge on';
@@ -322,8 +332,8 @@ function updateMetrics(stats) {
   $('m-dec').textContent = decS > 0 ? (nGen / decS).toFixed(1) : '—';
 }
 
-async function generate(prompt, maxNew, temperature) {
-  return client.request('generate', { prompt, maxNew, temperature }, event => {
+async function generate(prompt, maxNew, temperature, options = { mode: 'raw' }) {
+  return client.request('generate', { prompt, maxNew, temperature, ...options }, event => {
     if (event.event === 'started') log('prompt ' + event.nPrompt + ' token，预填充中…');
     if (event.event === 'token') {
       $('out').textContent = event.text;
@@ -343,11 +353,14 @@ $('run').addEventListener('click', async () => {
   const start = performance.now();
   try {
     const result = await generate($('prompt').value,
-      parseInt($('maxnew').value, 10) || 48, parseFloat($('temp').value) || 0);
+      Number($('maxnew').value), Number($('temp').value), {
+        mode: $('mode').value, penalty: Number($('penalty').value), topP: Number($('topp').value),
+      });
     updateMetrics(result.stats);
     $('out').textContent = result.text;
     $('tokids').textContent = 'token ids: ' + result.ids.join(' ');
-    log('完成：' + result.stats[1] + ' token，' +
+    const reasons = { eos: '模型结束', repetition: '检测到重复循环，已停止', length: '达到长度上限' };
+    log((reasons[result.reason] || '完成') + '：' + result.stats[1] + ' token，' +
       ((performance.now() - start) / 1000).toFixed(2) + ' s', 'ok');
   } catch (error) {
     if (!client.worker) handle = null;

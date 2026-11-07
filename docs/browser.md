@@ -7,6 +7,30 @@ while the page remains responsive, including during model loading and prefill.
 
 ## Streaming and cancellation regression (2026-11-07)
 
+### Chat usability (0.3.0)
+
+The page defaults to single-turn chat. Each run starts an independent session:
+there is no automatic multi-turn history. Model metadata (not the uploaded
+filename) selects the known SmolLM2 or Qwen2.5 ChatML profile and system text.
+Unknown profiles are rejected in chat mode; raw completion remains available.
+This is explicit profile support, not a general-purpose Jinja interpreter.
+Role delimiters in a user message are rejected to avoid breaking the wrapper.
+
+Chat uses a default repetition penalty of 1.1 over the previous 64 output
+tokens (once per distinct token, sign-aware). Temperature 0 remains greedy;
+positive temperature uses top-p (default 0.9). Three identical adjacent output
+blocks of 8-64 tokens stop generation and show a repetition warning. This is a
+heuristic and can stop intentional repeated text; raw mode bypasses both
+penalties and the guard. The legacy API and raw parity path are unchanged.
+Generation settings are validated rather than silently replaced with defaults.
+
+`python tools/check_chat_quality.py --profile smollm2 --model MODEL.gguf`
+checks simple English QA and the real non-greedy path. Use `--profile qwen2.5`
+to also check Chinese cumulative addition (3, 6, 10, 15). Reports and actual
+outputs are retained under web/dist/chat-quality. Requires Playwright/Chromium.
+These are small acceptance checks, not proof of general model accuracy.
+The page never executes generated Python or claims that generation is a calculator.
+
 The original synchronous callback plus setInterval did not let the page repaint
 during generation. It has been replaced with worker messages. The model buffer
 is transferred to the worker rather than cloned; synchronous MoonBit inference
