@@ -3,6 +3,35 @@
 Tags are vX.Y.Z on the commit whose moon.mod carries that version.
 Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
 
+## 0.2.0 — 2026-11-07
+
+- **Browser streaming is real.** Inference now runs in a module Web Worker
+  (`web/inference-worker.mjs`), so model parsing, prefill and generation run
+  off the UI thread. Tokens arrive as messages; the page displays text and
+  live tok/s while generation is still running. Stop terminates the worker
+  and keeps the partial text; the model must be reloaded to generate again.
+  The previous synchronous callback plus `setInterval` could not repaint
+  during generation and flushed the text only after the call returned.
+- `docs/browser.md` records the Worker architecture and a real-model
+  regression: three text updates during generation, a 25 ms page heartbeat
+  advancing, Stop halting output, reload working, and token IDs matching
+  direct JS API calls. The browser server serves `.mjs` with JavaScript MIME
+  types on Windows as well as other platforms.
+- **Third-party tokenizer data is now attributed.** `NOTICE` and
+  `third_party/` record the upstream models
+  (HuggingFaceTB/SmolLM2-135M-Instruct and Qwen/Qwen2.5-0.5B-Instruct),
+  their Apache-2.0 licences, checked revisions, copyright notices and
+  modifications. The embedded vocabularies and merge tables were compared
+  against the official `tokenizer.json` at those revisions; Qwen's 271
+  additional conversion-padding entries are identified separately. The
+  notice explicitly distinguishes verified facts from the original GGUF
+  conversion URLs, which were not recorded.
+- The fixture generator preserves attribution and extraction-input hashes.
+  `tools/check_tokenizer_provenance.py` re-derives fixture counts and hashes
+  offline and runs in CI. `tools/check_browser_streaming.py` exercises the
+  Worker path with a real model in a browser; it requires Python Playwright
+  and Chromium and is not run by the model-free CI job.
+
 ## 0.1.3 — 2026-11-02
 
 - Consume `soehi/gguf@0.1.3`.
