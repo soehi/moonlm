@@ -89,6 +89,12 @@ jobs:
       - name: Build (js, the browser target)
         run: moon build src/web --target js --release
 
+      - name: Verify tokenizer fixture attribution and hashes
+        run: python tools/check_tokenizer_provenance.py
+
+      - name: Assemble worker-enabled browser demo
+        run: python tools/serve_web.py --skip-build --no-serve
+
       # Deployment-size gate. These are the two numbers the project's "does it
       # fit on an edge device" claim rests on, so a silent doubling is a
       # regression even when every test passes. No model is needed, which is

@@ -50,6 +50,8 @@ def assemble():
     print("[2/2] assembling web/dist/")
     os.makedirs(DIST, exist_ok=True)
     shutil.copy2(os.path.join(WEB, "index.html"), os.path.join(DIST, "index.html"))
+    for name in ("worker-client.mjs", "inference-worker.mjs"):
+        shutil.copy2(os.path.join(WEB, name), os.path.join(DIST, name))
     if not os.path.isfile(BUNDLE):
         raise SystemExit(
             f"web.js is missing: {BUNDLE}\nrun without --skip-build to compile it")
@@ -63,6 +65,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # Filled in by `serve()`: directory to resolve `--model-dir` URLs against.
     model_dir = None
+    # Windows registry may associate .mjs with text/plain; ES modules require JS MIME.
+    extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,
+                      '.mjs': 'text/javascript', '.js': 'text/javascript'}
 
     def translate_path(self, path):
         """Resolve a `/models/...` URL against the model directory, if given.
@@ -141,7 +146,7 @@ def main():
     assemble()
     if args.no_serve:
         print(f"\nweb/dist/ ready; serve it yourself, e.g.\n"
-              f"  python -m http.server {args.port} --bind 127.0.0.1 -d {DIST}")
+              f"  python tools/serve_web.py --skip-build --port {args.port}")
         return 0
     model_dir = os.path.abspath(args.model_dir) if args.model_dir else None
     if model_dir and not os.path.isdir(model_dir):

@@ -1,7 +1,41 @@
 # Running in a browser
 
-The demo runs the engine in a web page: no backend, no CDN, one HTML file and
-one compiled script. Load a GGUF from disk, generate, watch the tokens arrive.
+The demo runs the engine in a module Web Worker: no inference backend or CDN.
+The static bundle includes index.html, worker-client.mjs, inference-worker.mjs
+and the compiled web.js. Load a GGUF from disk and watch token messages arrive
+while the page remains responsive, including during model loading and prefill.
+
+## Streaming and cancellation regression (2026-11-07)
+
+The original synchronous callback plus setInterval did not let the page repaint
+during generation. It has been replaced with worker messages. The model buffer
+is transferred to the worker rather than cloned; synchronous MoonBit inference
+never runs on the UI thread. Streaming updates decode the entire token prefix
+to handle characters split across token boundaries. Live rates are estimates;
+the final counters use the engine's phase timings.
+
+Stop terminates the worker immediately, retains partial text, and releases the
+model. Reload the model to generate again. File/URL controls are locked while
+loading or generating. Static module files must be served with JavaScript MIME
+types; the supplied server handles .mjs correctly on Windows.
+
+Validated with the local 138 MB SmolLM2 Q8_0: three distinct text updates arrived
+while generation was active, a 25 ms page heartbeat kept advancing, Stop halted
+output, selecting the same model again worked, and the final eight token IDs
+matched direct JS API generation. No page errors were recorded. This validates
+the worker/direct JS paths, not a new native/JS parity measurement.
+
+Reproduce (requires Python Playwright and Chromium; no model download):
+
+```bash
+python tools/serve_web.py --no-serve
+python tools/check_browser_streaming.py --model /path/to/model.gguf
+python tools/check_tokenizer_provenance.py
+```
+
+The browser script saves screenshots, video and report.json under the ignored
+web/dist/browser-check directory. The existing performance tables below are
+historical measurements, not fresh measurements of this worker transport.
 
 ```bash
 python tools/serve_web.py --model-dir /path/to/ggufs

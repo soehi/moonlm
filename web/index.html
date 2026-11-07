@@ -93,7 +93,7 @@
 <div class="wrap">
   <header>
     <h1><span class="tld">MoonLM</span> — 浏览器内本地推理</h1>
-    <div class="sub">纯 MoonBit 实现的 LLM 推理引擎。模型在你的浏览器里运行，不发起任何网络请求。</div>
+    <div class="sub">纯 MoonBit 实现的 LLM 推理引擎。模型在浏览器 Worker 中运行，不调用远程推理 API。</div>
     <div class="badges">
       <span class="badge" id="b-net">网络：未检测</span>
       <span class="badge" id="b-model">模型：未加载</span>
@@ -154,15 +154,16 @@
       <span id="nettext">检测网络状态…</span>
     </div>
     <div class="hint">
-      推理代码由 MoonBit 编译而来（<code>web.js</code>，约 313 KB），与模型一起加载到页面里。
-      整个页面是单个 HTML 文件加这个脚本，没有后端、没有 CDN。
-      断网后刷新本页仍可正常使用 —— 这可以直接演示。
+      推理代码由 MoonBit 编译而来（<code>web.js</code>），与模型一起加载到浏览器里。
+      静态页面通过 Web Worker 执行推理，没有推理后端、没有 CDN。
+      页面和 Worker 加载后，使用本地文件推理不需要外部网络；刷新仍需访问静态服务器。
     </div>
   </div>
 </div>
 
 <script type="module">
-import * as moonlm from './web.js';
+import { InferenceClient } from './worker-client.mjs';
+const client = new InferenceClient();
 
 const $ = (id) => document.getElementById(id);
 const log = (msg, cls) => {
@@ -178,50 +179,65 @@ function updateNet() {
   const on = navigator.onLine;
   $('netdot').className = 'dot' + (on ? '' : ' off');
   $('nettext').textContent = on
-    ? '浏览器报告在线。本页仍然不发起任何网络请求 —— 可用 DevTools 的 Network 面板核对。'
+    ? '浏览器报告在线。加载静态脚本或 URL 模型会请求网络；推理不调用远程 API。'
     : '浏览器报告离线（断网）。推理照常工作，这就是「零 API 调用」的实测。';
-  $('b-net').textContent = '网络：' + (on ? '在线（未使用）' : '已断网');
+  $('b-net').textContent = '网络：' + (on ? '在线（推理不调用 API）' : '已断网');
   $('b-net').className = 'badge' + (on ? '' : ' on');
 }
 window.addEventListener('online', updateNet);
 window.addEventListener('offline', updateNet);
 
 let handle = null;
-let stopRequested = false;
+let busy = false;
+let loadRevision = 0;
+function setBusy(value) {
+  busy = value;
+  for (const id of ['file', 'url', 'loadurl', 'clear']) $(id).disabled = value;
+  $('run').disabled = value || handle === null;
+  $('stop').disabled = !value;
+}
 const loadedName = { v: null };
 
 /// Load a byte buffer into the engine and update the UI, shared by the file
 /// input and the URL input so both paths behave identically.
 async function installModel(buf, name, readMs) {
-  if (handle !== null) { moonlm.moonlm_free(handle); handle = null; }
+  const revision = loadRevision;
+  client.stop(); handle = null;
+  setBusy(true);
   log(`读入 ${(buf.length / 1048576).toFixed(1)} MB，用时 ${readMs.toFixed(0)} ms`);
   log('解析 GGUF、构建 tokenizer 与权重视图…');
   // Yield once so the log line paints before the synchronous parse begins.
   await new Promise(r => setTimeout(r, 0));
+  if (revision !== loadRevision) return;
   const t1 = performance.now();
-  const h = moonlm.moonlm_load(buf, name);
-  const loadMs = performance.now() - t1;
-  if (h < 0) {
-    log('加载失败：' + moonlm.moonlm_last_error(), 'err');
-    $('b-model').textContent = '模型：加载失败';
-    $('b-model').className = 'badge';
-    $('run').disabled = true;
+  let loaded;
+  try {
+    loaded = await client.request('load', { bytes: buf, name }, () => {}, [buf.buffer]);
+  } catch (error) {
+    if (revision !== loadRevision) return;
+    log('加载失败：' + error.message, 'err');
+    $('b-model').textContent = '模型：未加载';
+    $('bar').style.display = 'none';
+    setBusy(false);
     return;
   }
-  handle = h;
+  const loadMs = performance.now() - t1;
+  handle = true;
   loadedName.v = name;
-  const ctx = moonlm.moonlm_context_length(h);
-  log(`加载完成：handle=${h}，上下文长度 ${ctx}，用时 ${loadMs.toFixed(0)} ms`, 'ok');
+  const ctx = loaded.context;
+  log(`加载完成：上下文长度 ${ctx}，用时 ${loadMs.toFixed(0)} ms`, 'ok');
   $('b-model').textContent = `模型：${name.slice(0, 28)}`;
   $('b-model').className = 'badge on';
   $('m-load').textContent = (loadMs / 1000).toFixed(1) + 's';
-  $('run').disabled = false;
+  setBusy(false);
   $('bar').style.display = 'none';
 }
 
 $('file').addEventListener('change', async (ev) => {
   const f = ev.target.files[0];
   if (!f) return;
+  const revision = ++loadRevision;
+  client.stop(); handle = null; setBusy(true);
   $('b-model').textContent = '模型：读取中…';
   $('b-model').className = 'badge';
   $('bar').style.display = 'block';
@@ -232,10 +248,14 @@ $('file').addEventListener('change', async (ev) => {
   try {
     buf = await readWithProgress(f);
   } catch (e) {
+    if (revision !== loadRevision) return;
     log('读取失败：' + e.message, 'err');
     $('b-model').textContent = '模型：读取失败';
+    $('bar').style.display = 'none';
+    setBusy(false);
     return;
   }
+  if (revision !== loadRevision) return;
   $('bar').value = 1;
   await installModel(buf, f.name, performance.now() - t0);
 });
@@ -243,6 +263,8 @@ $('file').addEventListener('change', async (ev) => {
 $('loadurl').addEventListener('click', async () => {
   const path = $('url').value.trim();
   if (!path) { log('请先填一个 .gguf 地址', 'warn'); return; }
+  const revision = ++loadRevision;
+  client.stop(); handle = null; setBusy(true);
   $('b-model').textContent = '模型：下载中…';
   $('b-model').className = 'badge';
   $('bar').style.display = 'block';
@@ -270,11 +292,14 @@ $('loadurl').addEventListener('click', async () => {
     let off = 0;
     for (const c of chunks) { buf.set(c, off); off += c.length; }
   } catch (e) {
+    if (revision !== loadRevision) return;
     log('读取失败：' + e.message, 'err');
     $('b-model').textContent = '模型：读取失败';
     $('bar').style.display = 'none';
+    setBusy(false);
     return;
   }
+  if (revision !== loadRevision) return;
   $('bar').value = 1;
   const name = path.split('/').pop() || 'model.gguf';
   await installModel(buf, name, performance.now() - t0);
@@ -290,76 +315,54 @@ function readWithProgress(file) {
   });
 }
 
+function updateMetrics(stats) {
+  const [nPrompt, nGen, , preS, decS] = stats;
+  $('m-tok').textContent = nGen;
+  $('m-pre').textContent = preS > 0 ? (nPrompt / preS).toFixed(1) : '—';
+  $('m-dec').textContent = decS > 0 ? (nGen / decS).toFixed(1) : '—';
+}
+
+async function generate(prompt, maxNew, temperature) {
+  return client.request('generate', { prompt, maxNew, temperature }, event => {
+    if (event.event === 'started') log('prompt ' + event.nPrompt + ' token，预填充中…');
+    if (event.event === 'token') {
+      $('out').textContent = event.text;
+      $('m-tok').textContent = event.count;
+      $('m-pre').textContent = event.prefillRate.toFixed(1);
+      $('m-dec').textContent = event.count > 1 ? event.decodeRate.toFixed(1) : '—';
+    }
+  });
+}
+
 $('run').addEventListener('click', async () => {
-  if (handle === null) return;
-  const prompt = $('prompt').value;
-  const maxNew = parseInt($('maxnew').value, 10) || 48;
-  const temp = parseFloat($('temp').value) || 0;
-
-  const ctx = moonlm.moonlm_context_length(handle);
-  const nPrompt = moonlm.moonlm_count_tokens(handle, prompt);
-  if (nPrompt < 0) { log('分词失败：' + moonlm.moonlm_last_error(), 'err'); return; }
-  log(`prompt ${nPrompt} token，上限 ${ctx}（生成 ${maxNew} 个）`);
-  if (nPrompt + maxNew > ctx) {
-    log(`提示词加生成长度超过上下文 ${ctx}，请调小最大 token 数`, 'warn');
-    return;
-  }
-
-  $('run').disabled = true;
-  $('stop').disabled = false;
+  if (handle === null || busy) return;
+  setBusy(true);
   $('out').textContent = '';
   $('tokids').textContent = '';
-  stopRequested = false;
-
-  // The callback fires synchronously for every token, so the page cannot
-  // repaint during generation. Pieces are buffered and flushed on a timer to
-  // keep the UI responsive without pretending the tokens arrive asynchronously.
-  let pending = '';
-  const flush = setInterval(() => {
-    if (pending) { $('out').textContent += pending; pending = ''; }
-  }, 60);
-
-  const t0 = performance.now();
-  let stats;
+  for (const id of ['m-tok', 'm-pre', 'm-dec']) $(id).textContent = '—';
+  const start = performance.now();
   try {
-    // A stop request cannot interrupt a running MoonBit call; the flag is
-    // checked between calls, and `max_tokens` is what actually bounds this one.
-    stats = moonlm.moonlm_generate(handle, prompt, maxNew, temp, (piece) => {
-      pending += piece;
-    });
-  } catch (e) {
-    clearInterval(flush);
-    log('生成抛异常：' + e.message, 'err');
-    $('run').disabled = false;
-    $('stop').disabled = true;
-    return;
-  }
-  clearInterval(flush);
-  if (pending) $('out').textContent += pending;
-  const wall = (performance.now() - t0) / 1000;
-
-  if (stats.length === 0) {
-    log('生成失败：' + moonlm.moonlm_last_error(), 'err');
-  } else {
-    const [nPromptS, nGen, hitEos, preS, decS] = Array.from(stats);
-    $('m-tok').textContent = nGen;
-    $('m-pre').textContent = preS > 0 ? (nPromptS / preS).toFixed(1) : '—';
-    $('m-dec').textContent = decS > 0 ? (nGen / decS).toFixed(1) : '—';
-    const ids = Array.from(moonlm.moonlm_last_tokens(handle));
-    $('tokids').textContent = `token ids: ${ids.join(' ')}`;
-    // The exact string the model produced, decoded from the ids rather than
-    // from the streamed pieces: a multi-byte character can straddle two tokens.
-    const exact = moonlm.moonlm_decode(handle, moonlm.moonlm_last_tokens(handle));
-    $('out').textContent = exact;
-    log(`完成：${nGen} token，${wall.toFixed(2)} s 墙钟，hit_eos=${hitEos === 1}`, 'ok');
-  }
-  $('run').disabled = false;
-  $('stop').disabled = true;
+    const result = await generate($('prompt').value,
+      parseInt($('maxnew').value, 10) || 48, parseFloat($('temp').value) || 0);
+    updateMetrics(result.stats);
+    $('out').textContent = result.text;
+    $('tokids').textContent = 'token ids: ' + result.ids.join(' ');
+    log('完成：' + result.stats[1] + ' token，' +
+      ((performance.now() - start) / 1000).toFixed(2) + ' s', 'ok');
+  } catch (error) {
+    if (!client.worker) handle = null;
+    log(error.message, error.name === 'AbortError' ? 'warn' : 'err');
+  } finally { setBusy(false); }
 });
 
 $('stop').addEventListener('click', () => {
-  stopRequested = true;
-  log('已请求停止（当前调用会跑完，下一次生成前生效）', 'warn');
+  loadRevision++;
+  client.stop();
+  handle = null;
+  $('file').value = '';
+  $('b-model').textContent = '模型：已停止，请重新加载';
+  $('bar').style.display = 'none';
+  setBusy(false);
 });
 
 $('clear').addEventListener('click', () => {
@@ -371,24 +374,18 @@ $('clear').addEventListener('click', () => {
 // Scriptable benchmark hook, for the automated browser check and for measuring
 // on a real device. Not wired to any UI control.
 window.moonlmBench = async function (prompt, tokens, repeats) {
-  if (handle === null) throw new Error('no model loaded');
-  const t0 = performance.now();
-  let last = null;
-  for (let i = 0; i < repeats; i++) {
-    last = moonlm.moonlm_generate(handle, prompt, tokens, 0, () => {});
-    if (last.length === 0) throw new Error(moonlm.moonlm_last_error());
-  }
-  const wall = (performance.now() - t0) / 1000;
-  const [nPrompt, nGen, , preS, decS] = Array.from(last);
-  return {
-    repeats,
-    wall_seconds: wall,
-    prompt_tokens: nPrompt,
-    generated_per_call: nGen,
-    decode_tokens_per_second: nGen / decS,
-    prefill_tokens_per_second: nPrompt / preS,
-    total_tokens_per_second: (nGen * repeats) / wall,
-  };
+  if (handle === null || busy) throw new Error('model not ready');
+  setBusy(true);
+  const start = performance.now();
+  let last;
+  try {
+    for (let i = 0; i < repeats; i++) last = await generate(prompt, tokens, 0);
+    const wall = (performance.now() - start) / 1000;
+    const [nPrompt, nGen, , preS, decS] = last.stats;
+    return { repeats, wall_seconds: wall, prompt_tokens: nPrompt, generated_per_call: nGen,
+      decode_tokens_per_second: nGen / decS, prefill_tokens_per_second: nPrompt / preS,
+      total_tokens_per_second: nGen * repeats / wall };
+  } finally { setBusy(false); }
 };
 
 updateNet();

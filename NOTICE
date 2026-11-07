@@ -1,0 +1,37 @@
+MoonLM third-party tokenizer test data
+
+src/tokenizer/gen_golden_test.mbt contains vocabulary and merge data attributed
+to HuggingFaceTB/SmolLM2-135M-Instruct, licensed Apache-2.0 according to its model
+card. Source: https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct
+License declaration checked at revision 12fd25f77366fa6b3b4b768ec3050bf629380bac.
+No separate LICENSE or NOTICE file was listed in that model revision.
+The Apache-2.0 license text is included in LICENSE at this repository root.
+
+src/tokenizer/gen_qwen2_test.mbt contains vocabulary and merge data attributed
+to Qwen/Qwen2.5-0.5B-Instruct. Source:
+https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct
+License checked at revision 7ae557604adf67be50417f59c2c2f167def9a775.
+Copyright 2024 Alibaba Cloud
+Licensed under the Apache License, Version 2.0. See third_party/Qwen-LICENSE.
+No separate NOTICE file was listed in that model revision.
+
+Modifications: extracted GGUF tokenizer tables were serialized as chunked
+MoonBit string arrays with locally generated test inputs and expected ids.
+These fixtures are test data, not original MoonLM vocabulary or model weights.
+Both embedded tables were checked against the local GGUF inputs on 2026-11-07.
+They were also compared directly with tokenizer.json at the official revisions
+above: SmolLM2 vocabulary/merges match exactly; Qwen's first 151665 tokens and
+all merges match exactly, with 271 additional synthetic padding entries
+named [PAD151665] through [PAD151935] in the GGUF conversion.
+Hashes and counts are recorded in third_party/tokenizer-data.json.
+
+The original download URLs/revisions of those historical GGUF conversions
+were not recorded. The upstream revisions above document the attribution and
+license checks; they are NOT claimed as the original conversion provenance.
+Do not redistribute the full GGUF weights based on this notice alone.
+
+The byte-to-Unicode mapping and pre-tokenization rules follow GPT-2/Qwen design;
+the MoonBit implementation is independently written. Reference tools used by
+the generator include Hugging Face tokenizers/transformers; their code is not
+embedded in the generated arrays. Keep this NOTICE and the referenced license
+files when redistributing these fixtures.

@@ -9,7 +9,7 @@ moon add soehi/moonlm
 ```
 
 不带版本号会解析到最新发布版，并写入你的 `moon.mod`；需要可复现的依赖树时显式固定
-（如 `moon add soehi/moonlm@0.1.3`）。
+（如 `moon add soehi/moonlm@0.2.0`）。
 
 这是一个**可复用的包**，不是只能当命令行工具体验的演示。装上之后即可在自己的包中
 `import { "soehi/moonlm/engine", ... }`，把推理当库调用。
@@ -123,6 +123,8 @@ moon run src/examples/generate -- model.gguf "The capital of France is" 32
   无 SIMD，比 llama.cpp 单线程（57.2 tok/s）慢约 3.7 倍。
 
 **M2 — 浏览器：Web Demo** ✅ **完成**
+
+加载、预填充与生成均在 Web Worker 中执行，通过消息持续更新文本和指标；停止会终止 Worker，之后需重新加载模型，验证方式见 [docs/browser.md](docs/browser.md)。
 
 | 交付物 | 状态 |
 |---|---|
@@ -254,6 +256,12 @@ loopback 上起一个 `llama-server`（见 [docs/crosscheck.md](docs/crosscheck.
 > 不是纯 Q4_K，对拍时不要预期全部为 Q4_K。
 
 ## 许可证
+
+### 第三方测试数据
+
+内嵌 SmolLM2 / Qwen tokenizer 词表与合并表属于第三方数据派生夹具，并非本项目原创词表。来源、固定版本、版权声明及修改方式见 [NOTICE](NOTICE)、[数据清单](third_party/tokenizer-data.json)、[Qwen 完整上游许可证](third_party/Qwen-LICENSE) 和 [SmolLM2 许可证据](third_party/SmolLM2-license-evidence.txt)。表内容已与官方固定版本 tokenizer.json 逐项核对；历史 GGUF 转换文件的原下载 URL 未记录，不作已追溯声明。
+
+`python tools/check_tokenizer_provenance.py` 可离线核对夹具哈希。生成器会保留来源声明和提取输入的 SHA-256；更换输入时需同步更新清单。
 
 [Apache-2.0](LICENSE)
 

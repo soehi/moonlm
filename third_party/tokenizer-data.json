@@ -1,0 +1,42 @@
+{
+  "checked_on": "2026-11-07",
+  "table_hash_encoding": "SHA-256 of UTF-8 JSON array, ensure_ascii=false, compact separators",
+  "fixtures": [
+    {
+      "file": "src/tokenizer/gen_golden_test.mbt",
+      "upstream": "HuggingFaceTB/SmolLM2-135M-Instruct",
+      "verified_tokenizer_revision": "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+      "upstream_tokenizer_json_sha256": "9ca9acddb6525a194ec8ac7a87f24fbba7232a9a15ffa1af0c1224fcd888e47c",
+      "upstream_vocab_and_merges_match": true,
+      "license": "Apache-2.0",
+      "license_evidence": "https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct/raw/12fd25f77366fa6b3b4b768ec3050bf629380bac/README.md",
+      "local_gguf": "SmolLM2-135M-Instruct-Q8_0.gguf",
+      "gguf_sha256": "5a1395716f7913741cc51d98581b9b1228d80987a9f7d3664106742eb06bba83",
+      "vocab_count": 49152,
+      "merges_count": 48900,
+      "vocab_sha256": "ecc2f33f7cdf683196646ea97b005f82398e5ddbb0e143fbe95a402277eb1788",
+      "merges_sha256": "3d6f4016bc9b70ea16f0f01b1dadb4504ad99c5eaa8584b81997dc65168e136b",
+      "tables_match_local_gguf": true,
+      "original_gguf_download_url": null
+    },
+    {
+      "file": "src/tokenizer/gen_qwen2_test.mbt",
+      "upstream": "Qwen/Qwen2.5-0.5B-Instruct",
+      "verified_tokenizer_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "upstream_tokenizer_json_sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539",
+      "upstream_vocab_prefix_count": 151665,
+      "upstream_vocab_prefix_and_all_merges_match": true,
+      "conversion_padding": "271 synthetic entries [PAD151665] through [PAD151935]",
+      "license": "Apache-2.0",
+      "license_evidence": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/raw/7ae557604adf67be50417f59c2c2f167def9a775/LICENSE",
+      "local_gguf": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+      "gguf_sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
+      "vocab_count": 151936,
+      "merges_count": 151387,
+      "vocab_sha256": "e2fadeac783c911f535d21f858f43127672a1d261af510d3f895e34bd2f6fb10",
+      "merges_sha256": "24fa2ae2a398e50784a1fff678482094af4f63e6783d35686726abacda8dc371",
+      "tables_match_local_gguf": true,
+      "original_gguf_download_url": null
+    }
+  ]
+}
