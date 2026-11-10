@@ -14,6 +14,11 @@ there is no automatic multi-turn history. Model metadata (not the uploaded
 filename) selects the known SmolLM2 or Qwen2.5 ChatML profile and system text.
 Unknown profiles are rejected in chat mode; raw completion remains available.
 This is explicit profile support, not a general-purpose Jinja interpreter.
+Matching a chat profile verifies the message format, not answer quality.
+SmolLM2-135M is a lightweight English demo, not a recommended Chinese chat
+model. Qwen2.5-0.5B-Instruct can be used for Chinese experiments, but its
+answers can still be incorrect or repetitive; sampling controls do not add
+knowledge or reasoning ability to a model.
 Role delimiters in a user message are rejected to avoid breaking the wrapper.
 
 Chat uses a default repetition penalty of 1.1 over the previous 64 output

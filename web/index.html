@@ -112,7 +112,8 @@
       <button id="loadurl">从地址加载</button>
     </div>
     <div class="hint">
-      推荐 <code>SmolLM2-135M-Instruct-Q8_0.gguf</code>（约 138 MB）。
+      中文问答可选择 <code>Qwen2.5-0.5B-Instruct</code> 的 GGUF；它仍是小模型，回答需要核实。
+      <code>SmolLM2-135M-Instruct-Q8_0.gguf</code>（约 138 MB）用于轻量英文演示，不建议用于中文聊天。
       <b>选文件</b>这条路完全不联网：读取用的是 <code>FileReader</code>，页面不发起任何请求。
       <b>从地址加载</b>是把模型当作静态文件从本地服务器读进来（浏览器加载本地文件本来就要这样），
       方便不想每次选文件的场合；两种方式加载完之后，推理过程本身都不产生任何网络请求。
@@ -124,7 +125,7 @@
   <div class="panel">
     <h2>2 · 生成</h2>
     <label class="fld">模式
-      <select id="mode"><option value="chat">对话（自动适配已支持的模型）</option><option value="raw">原始续写（用于对拍）</option></select>
+      <select id="mode"><option value="chat">单轮对话（适配已支持模型的格式）</option><option value="raw">原始续写（用于对拍）</option></select>
     </label>
     <textarea id="prompt">What is the capital of France? Answer in one sentence.</textarea>
     <div class="hint" id="modelhint">这是单轮对话，每次生成均独立；页面不会执行模型输出的代码。回答能力取决于所加载模型。</div>
@@ -232,8 +233,8 @@ async function installModel(buf, name, readMs) {
   loadedName.v = name;
   const ctx = loaded.context;
   $('modelhint').textContent = loaded.profile === 'smollm2'
-    ? '已识别 SmolLM2 ChatML；小模型中文与复杂推理可能不稳定，建议先测试简短英文问答。每次为独立单轮；不会执行代码。'
-    : loaded.profile === 'qwen2.5' ? '已识别 Qwen2.5 ChatML。每次为独立单轮对话；不会执行模型输出的代码。'
+    ? 'SmolLM2 对话格式已匹配；这不代表回答质量通过验证。135M 版本不建议用于中文聊天，请改用支持中文的模型，或测试简短英文问答。每次为独立单轮；不会执行代码。'
+    : loaded.profile === 'qwen2.5' ? 'Qwen2.5 对话格式已匹配；这不代表回答质量通过验证。0.5B 仍可能答错或重复，请核实回答。每次为独立单轮；不会执行模型输出的代码。'
     : '未知聊天模板：请选择原始续写；对话模式会拒绝猜测模板。';
   log(`加载完成：上下文长度 ${ctx}，用时 ${loadMs.toFixed(0)} ms`, 'ok');
   $('b-model').textContent = `模型：${name.slice(0, 28)}`;

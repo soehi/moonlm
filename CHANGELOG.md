@@ -5,6 +5,9 @@ Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
 
 ## Unreleased
 
+- Clarify browser model guidance: SmolLM2-135M is for lightweight English
+  demos; chat-format detection does not validate answer quality, and small
+  Qwen models still require checking their answers.
 - Migrate to MoonBit compiler 0.10.19: explicit-width integer names, attribute
   derives, current StringBuilder/Bytes view APIs, and explicit trait-method
   extensions preserving existing method-style calls.
