@@ -88,14 +88,14 @@ def emit_string_array(name: str, values: list[str], doc: str) -> str:
 
 
 def emit_int_array(name: str, values: list[int], doc: str, chunk_size: int = 4000) -> str:
-    """Emit an Array[Int] as per-chunk functions, for the same reason as
+    """Emit an Array[Int32] as per-chunk functions, for the same reason as
     `emit_string_array` (keeps each wasm function under the size ceiling)."""
     chunks = [values[i : i + chunk_size] for i in range(0, len(values), chunk_size)] or [[]]
     out: list[str] = []
     for ci, chunk in enumerate(chunks):
         out.append("///|")
         out.append(f"/// {doc}" if ci == 0 else f"/// Chunk {ci} of {name}.")
-        out.append(f"fn {name}_chunk_{ci}() -> Array[Int] {{")
+        out.append(f"fn {name}_chunk_{ci}() -> Array[Int32] {{")
         out.append("  [")
         row = [str(v) for v in chunk]
         for i in range(0, len(row), 20):
@@ -105,8 +105,8 @@ def emit_int_array(name: str, values: list[int], doc: str, chunk_size: int = 400
         out.append("")
     out.append("///|")
     out.append(f"/// {doc}")
-    out.append(f"fn {name}() -> Array[Int] {{")
-    out.append("  let out : Array[Int] = []")
+    out.append(f"fn {name}() -> Array[Int32] {{")
+    out.append("  let out : Array[Int32] = []")
     for ci in range(len(chunks)):
         out.append(f"  out.append({name}_chunk_{ci}()[:])")
     out.append("  out")
@@ -227,12 +227,12 @@ def main(source_repo: str, revision: str) -> None:
         "",
         "///|",
         f"/// Vocabulary size: {len(vocab)}.",
-        f"let golden_vocab_size : Int = {len(vocab)}",
+        f"let golden_vocab_size : Int32 = {len(vocab)}",
         "",
         "///|",
         f"/// BOS/EOS ids from the model metadata.",
-        f"let golden_bos : Int = {bos}",
-        f"let golden_eos : Int = {eos}",
+        f"let golden_bos : Int32 = {bos}",
+        f"let golden_eos : Int32 = {eos}",
         "",
     ]
 
@@ -406,16 +406,16 @@ def emit_qwen2(model_path: str, source_repo: str, revision: str) -> None:
         "",
         "///|",
         f"/// Vocabulary size: {len(vocab)}.",
-        f"let qwen2_vocab_size : Int = {len(vocab)}",
+        f"let qwen2_vocab_size : Int32 = {len(vocab)}",
         "",
         "///|",
         "/// BOS/EOS ids from the model metadata.",
-        f"let qwen2_bos : Int = {bos}",
-        f"let qwen2_eos : Int = {eos}",
+        f"let qwen2_bos : Int32 = {bos}",
+        f"let qwen2_eos : Int32 = {eos}",
         "",
         "///|",
         "/// Control-token ids, which encode to single tokens before BPE.",
-        "let qwen2_control_ids : Array[Int] = ["
+        "let qwen2_control_ids : Array[Int32] = ["
         + ", ".join(str(i) for i in control)
         + "]",
         "",

@@ -21,11 +21,11 @@ import {
   "soehi/moonlm/tools",
 }
 
-
 pkgtype(kind: "executable")
 
 // The wasm entry point only exercises gguf and tensor in memory, so the rest of
-// the imports are unused there; imports cannot be scoped per target.
+// the imports are intentionally unused there in this shared package.
+
 warnings = "-unused_package"
 
 options(

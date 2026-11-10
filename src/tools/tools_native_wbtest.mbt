@@ -10,7 +10,6 @@
 // Every call goes through the same `Sandbox::resolve` the agent loop uses, so a
 // denial here is the denial the model would hit.
 
-
 ///|
 /// Call the trait method explicitly, avoiding the deprecated implicit promotion.
 fn invoke_tool(
@@ -43,7 +42,7 @@ fn invoke_text(tool : &@agent.Tool, args : Json) -> String raise {
 test "list_dir lists workspace entries and refuses escapes" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = ListDirTool::{ sandbox: sb }
+  let tool = ListDirTool::{ sandbox: sb, }
   let listing = invoke_text(tool, tool_args([("path", ".")]))
   assert_true(listing.contains("inside.txt"))
   assert_true(listing.contains("sub"))
@@ -63,7 +62,7 @@ test "list_dir lists workspace entries and refuses escapes" {
 test "read_file returns contents and refuses a directory" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = ReadFileTool::{ sandbox: sb }
+  let tool = ReadFileTool::{ sandbox: sb, }
   assert_eq(invoke_text(tool, tool_args([("path", "inside.txt")])), "hello")
   assert_eq(
     invoke_text(tool, tool_args([("path", "sub/nested.txt")])),
@@ -87,7 +86,7 @@ test "read_file returns contents and refuses a directory" {
 test "read_file cannot follow the escaping symlink" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = ReadFileTool::{ sandbox: sb }
+  let tool = ReadFileTool::{ sandbox: sb, }
   match invoke_tool(tool, tool_args([("path", "escape/secret.txt")])) {
     Ok(out) => fail("must be denied, got: \{out.text}")
     Err(SandboxDenied(_)) => ()
@@ -99,7 +98,7 @@ test "read_file cannot follow the escaping symlink" {
 test "grep_text finds a literal substring and skips escapes" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = GrepTextTool::{ sandbox: sb }
+  let tool = GrepTextTool::{ sandbox: sb, }
   let hits = invoke_text(tool, tool_args([("pattern", "nest")]))
   assert_true(hits.contains("sub/nested.txt:1: nested"))
   // "secret" exists only outside the workspace; the escaping link must not
@@ -109,7 +108,8 @@ test "grep_text finds a literal substring and skips escapes" {
     tool_args([("pattern", "secret"), ("path", ".")]),
   )
   assert_false(misses.contains("secret.txt"))
-  match invoke_tool(tool, tool_args([("pattern", "x"), ("path", "../outside")])) {
+  match
+    invoke_tool(tool, tool_args([("pattern", "x"), ("path", "../outside")])) {
     Ok(_) => fail("grep outside the workspace must be denied")
     Err(SandboxDenied(_)) => ()
     Err(other) => fail("expected SandboxDenied, got \{other.message()}")
@@ -120,7 +120,7 @@ test "grep_text finds a literal substring and skips escapes" {
 test "required fields are validated before the filesystem is touched" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = ReadFileTool::{ sandbox: sb }
+  let tool = ReadFileTool::{ sandbox: sb, }
   let empty : Map[String, Json] = Map([])
   match invoke_tool(tool, Json::object(empty)) {
     Ok(_) => fail("missing path must be rejected")
@@ -160,7 +160,7 @@ test "grep_text searches a subdirectory, not just the root" {
   // a search under "sub" looked for "nested.txt" at the root and found nothing.
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = GrepTextTool::{ sandbox: sb }
+  let tool = GrepTextTool::{ sandbox: sb, }
   let hits = invoke_text(
     tool,
     tool_args([("pattern", "nested"), ("path", "sub")]),
@@ -192,13 +192,12 @@ fn expect_invalid(
   match invoke_tool(tool, args) {
     Ok(out) =>
       fail("\{what}: expected InvalidArguments, got success: \{out.text}")
-    Err(InvalidArguments(message~)) => {
+    Err(InvalidArguments(message~)) =>
       if !message.contains(path) {
         fail(
           "\{what}: message does not name field path \"\{path}\": \{message}",
         )
       }
-    }
     Err(SandboxDenied(message~)) =>
       fail("\{what}: expected InvalidArguments, got SandboxDenied: \{message}")
     Err(IoFailure(message~)) =>
@@ -208,9 +207,7 @@ fn expect_invalid(
 
 ///|
 fn json_of(text : String) -> Json raise {
-  try {
-    @json.parse(text)
-  } catch {
+  @json.parse(text) catch {
     e => fail("bad test JSON: \{e}")
   }
 }
@@ -247,7 +244,7 @@ test "calc rejects all four malformed shapes with a field path" {
 test "list_dir rejects all four malformed shapes with a field path" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = ListDirTool::{ sandbox: sb }
+  let tool = ListDirTool::{ sandbox: sb, }
   expect_invalid(tool, json_of("{\"path\": 3}"), "path", "list_dir wrong type")
   expect_invalid(tool, json_of("{}"), "path", "list_dir missing field")
   expect_invalid(
@@ -264,8 +261,13 @@ test "list_dir rejects all four malformed shapes with a field path" {
 test "read_file rejects all four malformed shapes with a field path" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = ReadFileTool::{ sandbox: sb }
-  expect_invalid(tool, json_of("{\"path\": true}"), "path", "read_file wrong type")
+  let tool = ReadFileTool::{ sandbox: sb, }
+  expect_invalid(
+    tool,
+    json_of("{\"path\": true}"),
+    "path",
+    "read_file wrong type",
+  )
   expect_invalid(tool, json_of("{}"), "path", "read_file missing field")
   expect_invalid(
     tool,
@@ -273,15 +275,25 @@ test "read_file rejects all four malformed shapes with a field path" {
     "encoding",
     "read_file unknown field",
   )
-  expect_invalid(tool, json_of("{\"path\": [\"a\"]}"), "path", "read_file array path")
+  expect_invalid(
+    tool,
+    json_of("{\"path\": [\"a\"]}"),
+    "path",
+    "read_file array path",
+  )
 }
 
 ///|
 test "grep_text rejects all four malformed shapes with a field path" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = GrepTextTool::{ sandbox: sb }
-  expect_invalid(tool, json_of("{\"pattern\": 7}"), "pattern", "grep wrong type")
+  let tool = GrepTextTool::{ sandbox: sb, }
+  expect_invalid(
+    tool,
+    json_of("{\"pattern\": 7}"),
+    "pattern",
+    "grep wrong type",
+  )
   expect_invalid(tool, json_of("{}"), "pattern", "grep missing field")
   expect_invalid(
     tool,
@@ -290,7 +302,12 @@ test "grep_text rejects all four malformed shapes with a field path" {
     "grep unknown field",
   )
   // minLength on `pattern`, and the optional `path` must still be a string.
-  expect_invalid(tool, json_of("{\"pattern\": \"\"}"), "pattern", "grep empty pattern")
+  expect_invalid(
+    tool,
+    json_of("{\"pattern\": \"\"}"),
+    "pattern",
+    "grep empty pattern",
+  )
   expect_invalid(
     tool,
     json_of("{\"pattern\": \"x\", \"path\": 9}"),
@@ -305,7 +322,7 @@ test "the optional field's default is applied by the schema, not the tool" {
   // still search the workspace root rather than fail or search "".
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  let tool = GrepTextTool::{ sandbox: sb }
+  let tool = GrepTextTool::{ sandbox: sb, }
   let hits = invoke_text(tool, json_of("{\"pattern\": \"nest\"}"))
   assert_true(hits.contains("sub/nested.txt"))
 }
@@ -320,12 +337,13 @@ test "rendered schema and decoder agree on required fields" {
   let required = match rendered {
     Object(fields) =>
       match fields.get("required") {
-        Some(Array(items)) => items.map(fn(j) {
-          match j {
-            String(s) => s
-            _ => ""
-          }
-        })
+        Some(Array(items)) =>
+          items.map(fn(j) {
+            match j {
+              String(s) => s
+              _ => ""
+            }
+          })
         _ => []
       }
     _ => []

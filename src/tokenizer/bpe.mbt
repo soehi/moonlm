@@ -23,7 +23,7 @@ pub(all) struct MergeTable {
   /// Original merge priority (array index in tokenizer.ggml.merges) of each
   /// pair, parallel to the sorted arrays. Selection during BPE compares THIS,
   /// not the sorted position: alphabetical order and merge priority differ.
-  priority : Array[Int]
+  priority : Array[Int32]
 } derive(Debug)
 
 ///|
@@ -39,7 +39,7 @@ pub fn MergeTable::new(merges : Array[String]) -> MergeTable {
   let lefts : Array[String] = []
   let rights : Array[String] = []
   let joined : Array[String] = []
-  let prio : Array[Int] = []
+  let prio : Array[Int32] = []
   for i, entry in merges {
     let sp = find_space(entry)
     if sp > 0 {
@@ -55,11 +55,11 @@ pub fn MergeTable::new(merges : Array[String]) -> MergeTable {
   // Sort indices [0, n) by (left, right). `ord` holds row indices; `tmp` is
   // merge scratch. Comparison is explicit char-wise on (left, right) so the
   // ordering cannot depend on operator overloads.
-  let ord : Array[Int] = Array::make(n, 0)
+  let ord : Array[Int32] = Array::make(n, 0)
   for i = 0; i < n; i = i + 1 {
     ord[i] = i
   }
-  let tmp : Array[Int] = Array::make(n, 0)
+  let tmp : Array[Int32] = Array::make(n, 0)
   let mut width = 1
   while width < n {
     let mut lo = 0
@@ -71,7 +71,12 @@ pub fn MergeTable::new(merges : Array[String]) -> MergeTable {
       let mut b = mid
       let mut k = lo
       while a < mid && b < hi {
-        let ca = cmp_pair(lefts[ord[a]], rights[ord[a]], lefts[ord[b]], rights[ord[b]])
+        let ca = cmp_pair(
+          lefts[ord[a]],
+          rights[ord[a]],
+          lefts[ord[b]],
+          rights[ord[b]],
+        )
         if ca <= 0 {
           tmp[k] = ord[a]
           a = a + 1
@@ -102,7 +107,7 @@ pub fn MergeTable::new(merges : Array[String]) -> MergeTable {
   let s_lefts : Array[String] = []
   let s_rights : Array[String] = []
   let s_joined : Array[String] = []
-  let s_prio : Array[Int] = []
+  let s_prio : Array[Int32] = []
   for k = 0; k < n; k = k + 1 {
     let i = ord[k]
     s_lefts.push(lefts[i])
@@ -110,13 +115,13 @@ pub fn MergeTable::new(merges : Array[String]) -> MergeTable {
     s_joined.push(joined[i])
     s_prio.push(prio[i])
   }
-  { lefts: s_lefts, rights: s_rights, joined: s_joined, priority: s_prio }
+  { lefts: s_lefts, rights: s_rights, joined: s_joined, priority: s_prio, }
 }
 
 ///|
 /// Lexicographic comparison of two (left, right) pairs: left first, then
 /// right, both by Unicode code point.
-fn cmp_pair(l1 : String, r1 : String, l2 : String, r2 : String) -> Int {
+fn cmp_pair(l1 : String, r1 : String, l2 : String, r2 : String) -> Int32 {
   let c = cmp_str(l1, l2)
   if c != 0 {
     c
@@ -127,7 +132,7 @@ fn cmp_pair(l1 : String, r1 : String, l2 : String, r2 : String) -> Int {
 
 ///|
 /// Code-point-wise lexicographic comparison of two strings.
-fn cmp_str(a : String, b : String) -> Int {
+fn cmp_str(a : String, b : String) -> Int32 {
   let la = a.length()
   let lb = b.length()
   let n = if la < lb { la } else { lb }
@@ -155,7 +160,7 @@ fn cmp_str(a : String, b : String) -> Int {
 ///|
 /// Find the first space in `s`, or -1. Tokens never contain spaces because the
 /// byte encoder maps byte 0x20 to 'Ġ'.
-fn find_space(s : String) -> Int {
+fn find_space(s : String) -> Int32 {
   let mut i = 0
   for ch in s {
     if ch == ' ' {
@@ -168,7 +173,11 @@ fn find_space(s : String) -> Int {
 
 ///|
 /// Look up the rank of merging `left + " " + right`; lower is better.
-pub fn MergeTable::lookup(self : MergeTable, left : String, right : String) -> Int {
+pub fn MergeTable::lookup(
+  self : MergeTable,
+  left : String,
+  right : String,
+) -> Int32 {
   // Binary search on (left, right); returns the sorted-array position, or -1.
   // Callers compare `priority[pos]` for merge order and read
   // `joined[pos]` for the merged text — the arrays are parallel.
@@ -191,7 +200,7 @@ pub fn MergeTable::lookup(self : MergeTable, left : String, right : String) -> I
 
 ///|
 /// Merge priority of the pair at sorted position `pos`.
-pub fn MergeTable::priority_at(self : MergeTable, pos : Int) -> Int {
+pub fn MergeTable::priority_at(self : MergeTable, pos : Int32) -> Int32 {
   self.priority[pos]
 }
 
@@ -241,3 +250,6 @@ pub fn bpe_merge(table : MergeTable, piece : String) -> Array[String] {
   }
   parts
 }
+
+///|
+pub extend MergeTable with @debug.Debug::{to_repr}

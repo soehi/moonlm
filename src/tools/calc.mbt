@@ -17,7 +17,7 @@
 /// Returns `Err` with a position for a syntax error, so the model can correct
 /// the expression rather than guess why it failed.
 pub fn evaluate(expression : String) -> Result[Double, String] {
-  let p = CalcParser::{ text: expression, pos: 0 }
+  let p = CalcParser::{ text: expression, pos: 0, }
   match p.parse_expr() {
     Err(e) => Err(e)
     Ok(v) => {
@@ -30,7 +30,6 @@ pub fn evaluate(expression : String) -> Result[Double, String] {
     }
   }
 }
-
 
 ///|
 /// Whether a UTF-16 code unit is whitespace, for skipping spaces in `calc`.
@@ -46,7 +45,7 @@ fn is_space_unit(unit : UInt16) -> Bool {
 /// Parser state. `mut pos` is the cursor into `text`.
 priv struct CalcParser {
   text : String
-  mut pos : Int
+  mut pos : Int32
 }
 
 ///|
@@ -185,9 +184,7 @@ fn CalcParser::parse_number(self : CalcParser) -> Result[Double, String] {
     return Err("expected a number at position \{start}")
   }
   let literal = self.text[start:self.pos].to_owned()
-  try {
-    Ok(@string.parse_double(literal))
-  } catch {
+  Ok(@string.parse_double(literal)) catch {
     _ => Err("cannot parse number \"\{literal}\"")
   }
 }

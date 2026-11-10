@@ -3,7 +3,7 @@
 // Pure MoonBit, no FFI. Must build and test on both `native` and `wasm-gc`.
 
 import {
-  "moonbitlang/core/encoding/utf8",
+  "moonbitlang/core/debug",
   "moonbitlang/core/env",
   "soehi/gguf",
   "soehi/moonlm/model",

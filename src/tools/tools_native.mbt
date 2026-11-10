@@ -16,11 +16,11 @@ pub let max_read_bytes : Int64 = 262144L
 
 ///|
 /// Maximum entries `grep_text` will scan before reporting a partial result.
-pub let max_grep_files : Int = 256
+pub let max_grep_files : Int32 = 256
 
 ///|
 /// Maximum number of matching lines `grep_text` returns.
-pub let max_grep_matches : Int = 100
+pub let max_grep_matches : Int32 = 100
 
 ///|
 /// `list_dir`: entry names of a workspace directory.
@@ -35,9 +35,7 @@ pub impl @agent.Tool for ListDirTool with fn name(self : ListDirTool) -> String 
 }
 
 ///|
-pub impl @agent.Tool for ListDirTool with fn description(
-  self : ListDirTool,
-) -> String {
+pub impl @agent.Tool for ListDirTool with fn description(self : ListDirTool) -> String {
   let _ = self
   "List the entries of a workspace-relative DIRECTORY (use this, not read_file, for directories). Use \".\" for the workspace root."
 }
@@ -77,9 +75,7 @@ pub impl @agent.Tool for ListDirTool with fn invoke(
   }
   match is_dir(resolved) {
     Ok(true) => ()
-    Ok(false) => {
-      return Err(IoFailure(message="not a directory: \{path}"))
-    }
+    Ok(false) => return Err(IoFailure(message="not a directory: \{path}"))
     Err(e) => return Err(IoFailure(message=e))
   }
   let entries = match list_dir(resolved) {
@@ -88,16 +84,12 @@ pub impl @agent.Tool for ListDirTool with fn invoke(
   }
   if entries.is_empty() {
     return Ok({
-        text: "(empty directory)",
-        truncated: false,
-        provides_evidence: false,
-      })
+      text: "(empty directory)",
+      truncated: false,
+      provides_evidence: false,
+    })
   }
-  Ok({
-    text: entries.join("\n"),
-    truncated: false,
-    provides_evidence: false,
-  })
+  Ok({ text: entries.join("\n"), truncated: false, provides_evidence: false, })
 }
 
 ///|
@@ -113,9 +105,7 @@ pub impl @agent.Tool for ReadFileTool with fn name(self : ReadFileTool) -> Strin
 }
 
 ///|
-pub impl @agent.Tool for ReadFileTool with fn description(
-  self : ReadFileTool,
-) -> String {
+pub impl @agent.Tool for ReadFileTool with fn description(self : ReadFileTool) -> String {
   let _ = self
   "Read a UTF-8 text FILE under the workspace. The path must be workspace-relative and must name a file, not a directory."
 }
@@ -179,9 +169,9 @@ pub impl @agent.Tool for ReadFileTool with fn invoke(
   match read_text_file(resolved, max_read_bytes) {
     Ok(text) =>
       if text == "" {
-        Ok({ text: "(empty file)", truncated: false, provides_evidence: true })
+        Ok({ text: "(empty file)", truncated: false, provides_evidence: true, })
       } else {
-        Ok({ text, truncated: false, provides_evidence: true })
+        Ok({ text, truncated: false, provides_evidence: true, })
       }
     Err(e) => Err(IoFailure(message=e))
   }
@@ -204,9 +194,7 @@ pub impl @agent.Tool for GrepTextTool with fn name(self : GrepTextTool) -> Strin
 }
 
 ///|
-pub impl @agent.Tool for GrepTextTool with fn description(
-  self : GrepTextTool,
-) -> String {
+pub impl @agent.Tool for GrepTextTool with fn description(self : GrepTextTool) -> String {
   let _ = self
   "Search for a literal substring in files under a workspace-relative directory. Returns matching lines as \"path:line: text\"."
 }
@@ -227,20 +215,20 @@ pub impl @agent.Tool for GrepTextTool with fn parameters_schema(
 /// what "no path" means.
 fn grep_text_schema() -> @agent.Schema {
   @agent.Schema::object()
-    .req(
-      @agent.string(
-        name="pattern",
-        description="Literal text to find; not a regex.",
-        min_len=1,
-      ),
-    )
-    .opt(
-      @agent.string(
-        name="path",
-        description="Workspace-relative directory to search. Defaults to \".\".",
-      ),
-      default=".",
-    )
+  .req(
+    @agent.string(
+      name="pattern",
+      description="Literal text to find; not a regex.",
+      min_len=1,
+    ),
+  )
+  .opt(
+    @agent.string(
+      name="path",
+      description="Workspace-relative directory to search. Defaults to \".\".",
+    ),
+    default=".",
+  )
 }
 
 ///|
@@ -262,13 +250,21 @@ pub impl @agent.Tool for GrepTextTool with fn invoke(
     Err(e) => return Err(IoFailure(message=e))
   }
   let matches : Array[String] = []
-  let scanned : Ref[Int] = Ref(0)
+  let scanned : Ref[Int32] = Ref(0)
   let truncated : Ref[Bool] = Ref(false)
   // The prefix must be the requested subdirectory, not "": entries are
   // re-resolved against the workspace root, so starting from "" would look for
   // "gguf-notes.md" at the root instead of "docs/gguf-notes.md".
   let root_rel = if path == "." || path == "./" { "" } else { path }
-  grep_dir(self.sandbox, resolved, root_rel, pattern, matches, scanned, truncated)
+  grep_dir(
+    self.sandbox,
+    resolved,
+    root_rel,
+    pattern,
+    matches,
+    scanned,
+    truncated,
+  )
   if matches.is_empty() {
     Ok({
       text: "(no matches)",
@@ -295,7 +291,7 @@ fn grep_dir(
   prefix : String,
   pattern : String,
   matches : Array[String],
-  scanned : Ref[Int],
+  scanned : Ref[Int32],
   truncated : Ref[Bool],
 ) -> Unit {
   if matches.length() >= max_grep_matches || scanned.val >= max_grep_files {
@@ -320,7 +316,8 @@ fn grep_dir(
       Err(_) => continue
     }
     match is_dir(resolved) {
-      Ok(true) => grep_dir(sandbox, resolved, rel, pattern, matches, scanned, truncated)
+      Ok(true) =>
+        grep_dir(sandbox, resolved, rel, pattern, matches, scanned, truncated)
       Ok(false) => {
         scanned.val = scanned.val + 1
         let text = match read_text_file(resolved, max_read_bytes) {
@@ -383,17 +380,50 @@ pub fn register_fs_tools(
   registry : @agent.ToolRegistry,
   sandbox : Sandbox,
 ) -> Result[Unit, String] {
-  match registry.add(ListDirTool::{ sandbox }) {
+  match registry.add(ListDirTool::{ sandbox, }) {
     Ok(_) => ()
     Err(e) => return Err(e)
   }
-  match registry.add(ReadFileTool::{ sandbox }) {
+  match registry.add(ReadFileTool::{ sandbox, }) {
     Ok(_) => ()
     Err(e) => return Err(e)
   }
-  match registry.add(GrepTextTool::{ sandbox }) {
+  match registry.add(GrepTextTool::{ sandbox, }) {
     Ok(_) => ()
     Err(e) => return Err(e)
   }
   Ok(())
+}
+
+///|
+pub extend ListDirTool with @debug.Debug::{to_repr}
+
+///|
+pub extend ListDirTool with @soehi/moonlm/agent.Tool::{
+  name,
+  invoke,
+  parameters_schema,
+  description,
+}
+
+///|
+pub extend ReadFileTool with @debug.Debug::{to_repr}
+
+///|
+pub extend ReadFileTool with @soehi/moonlm/agent.Tool::{
+  name,
+  invoke,
+  parameters_schema,
+  description,
+}
+
+///|
+pub extend GrepTextTool with @debug.Debug::{to_repr}
+
+///|
+pub extend GrepTextTool with @soehi/moonlm/agent.Tool::{
+  name,
+  invoke,
+  parameters_schema,
+  description,
 }

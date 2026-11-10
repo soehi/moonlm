@@ -92,7 +92,7 @@ pub(all) struct ToolRegistry {
 
 ///|
 pub fn ToolRegistry::new() -> ToolRegistry {
-  { tools: [] }
+  { tools: [], }
 }
 
 ///|
@@ -133,7 +133,7 @@ pub fn ToolRegistry::names(self : ToolRegistry) -> Array[String] {
 /// The `<tools>` block the prompt advertises: one JSON object per line, the
 /// shape Qwen2's chat template expects.
 pub fn ToolRegistry::prompt_block(self : ToolRegistry) -> String {
-  let sb = StringBuilder::new()
+  let sb = StringBuilder()
   for t in self.tools {
     let entry : Json = {
       "type": Json::string("function"),
@@ -148,3 +148,15 @@ pub fn ToolRegistry::prompt_block(self : ToolRegistry) -> String {
   }
   sb.to_string()
 }
+
+///|
+pub extend ToolError with Eq::{not_equal, equal}
+
+///|
+pub extend ToolError with @debug.Debug::{to_repr}
+
+///|
+pub extend ToolOutput with Eq::{not_equal, equal}
+
+///|
+pub extend ToolOutput with @debug.Debug::{to_repr}

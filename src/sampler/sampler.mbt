@@ -22,7 +22,7 @@ pub(all) struct Rng {
 /// Create a generator. A zero seed is remapped because xorshift64* has a fixed
 /// point at zero and would emit zeros forever.
 pub fn Rng::new(seed : UInt64) -> Rng {
-  { state: if seed == 0UL { 0x9E3779B97F4A7C15UL } else { seed } }
+  { state: if seed == 0UL { 0x9E3779B97F4A7C15UL } else { seed }, }
 }
 
 ///|
@@ -56,7 +56,7 @@ pub(all) enum Sampler {
   /// Divide logits by `temperature` before the softmax.
   Temperature(temperature~ : Double)
   /// Temperature scaling, then keep only the `k` best tokens.
-  TopK(temperature~ : Double, k~ : Int)
+  TopK(temperature~ : Double, k~ : Int32)
   /// Temperature scaling, then keep the smallest set whose probability mass
   /// reaches `p`.
   TopP(temperature~ : Double, p~ : Double)
@@ -68,7 +68,7 @@ pub(all) suberror SamplerError {
   /// A non-positive temperature would divide by zero or flip the distribution.
   BadTemperature(value~ : Double)
   /// top-k needs k >= 1.
-  BadK(value~ : Int)
+  BadK(value~ : Int32)
   /// top-p needs 0 < p <= 1.
   BadP(value~ : Double)
   /// The logits array was empty.
@@ -99,7 +99,7 @@ pub fn sample(
   logits : FixedArray[Float],
   sampler : Sampler,
   rng : Rng,
-) -> Result[Int, SamplerError] {
+) -> Result[Int32, SamplerError] {
   let n = logits.length()
   if n == 0 {
     return Err(EmptyLogits)
@@ -157,7 +157,10 @@ pub fn sample(
 /// routinely reach 30+, and `exp(30)` in `Float` is already near the top of the
 /// range, so a larger value would overflow to infinity and make the
 /// distribution all-NaN.
-pub fn probs_from(logits : FixedArray[Float], temperature : Double) -> Array[Double] {
+pub fn probs_from(
+  logits : FixedArray[Float],
+  temperature : Double,
+) -> Array[Double] {
   let n = logits.length()
   let inv_t = 1.0 / temperature
   let mut max_v = logits[0].to_double() * inv_t
@@ -186,7 +189,7 @@ pub fn probs_from(logits : FixedArray[Float], temperature : Double) -> Array[Dou
 ///
 /// Ties at the cut-off are resolved by id order, so the result depends only on
 /// the logits and not on sort stability.
-pub fn truncate_top_k(probs : Array[Double], k : Int) -> Array[Double] {
+pub fn truncate_top_k(probs : Array[Double], k : Int32) -> Array[Double] {
   let n = probs.length()
   let kept : Array[Double] = Array::make(n, 0.0)
   if k >= n {
@@ -244,15 +247,19 @@ pub fn truncate_top_p(probs : Array[Double], p : Double) -> Array[Double] {
 
 ///|
 /// Indices of `probs` ordered by probability descending, ties by ascending id.
-fn sorted_indices_desc(probs : Array[Double]) -> Array[Int] {
+fn sorted_indices_desc(probs : Array[Double]) -> Array[Int32] {
   let n = probs.length()
-  let order : Array[Int] = Array::make(n, 0)
+  let order : Array[Int32] = Array::make(n, 0)
   for i = 0; i < n; i = i + 1 {
     order[i] = i
   }
   // Vocabularies contain 49k-152k entries. Avoid quadratic insertion sort.
   order.sort_by(fn(a, b) {
-    if probs[a] > probs[b] { -1 } else if probs[a] < probs[b] { 1 } else {
+    if probs[a] > probs[b] {
+      -1
+    } else if probs[a] < probs[b] {
+      1
+    } else {
       a.compare(b)
     }
   })
@@ -265,7 +272,7 @@ fn sorted_indices_desc(probs : Array[Double]) -> Array[Int] {
 /// Walks the cumulative mass and takes the first index that reaches the uniform
 /// draw. Floating-point drift can leave the cumulative sum marginally below the
 /// draw, so the last nonzero entry is the fallback rather than a modulo.
-fn draw_from(probs : Array[Double], rng : Rng) -> Int {
+fn draw_from(probs : Array[Double], rng : Rng) -> Int32 {
   let r = rng.next_double()
   let mut cum = 0.0
   let mut last_nonzero = 0
@@ -280,3 +287,21 @@ fn draw_from(probs : Array[Double], rng : Rng) -> Int {
   }
   last_nonzero
 }
+
+///|
+pub extend Rng with @debug.Debug::{to_repr}
+
+///|
+pub extend Sampler with Eq::{not_equal, equal}
+
+///|
+pub extend Sampler with @debug.Debug::{to_repr}
+
+///|
+pub extend SamplerError with Eq::{not_equal, equal}
+
+///|
+pub extend SamplerError with @debug.Debug::{to_repr}
+
+///|
+pub extend SamplerError with Show::{to_string, output}

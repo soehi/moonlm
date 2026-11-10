@@ -14,8 +14,10 @@
 ///|
 /// A minimal, valid GGUF v3 container: magic, version, no tensors, no metadata.
 fn minimal_container() -> Bytes {
-  b"GGUF" + b"\x03\x00\x00\x00" + b"\x00\x00\x00\x00\x00\x00\x00\x00" +
-    b"\x00\x00\x00\x00\x00\x00\x00\x00"
+  b"GGUF" +
+  b"\x03\x00\x00\x00" +
+  b"\x00\x00\x00\x00\x00\x00\x00\x00" +
+  b"\x00\x00\x00\x00\x00\x00\x00\x00"
 }
 
 ///|
@@ -28,7 +30,9 @@ fn main {
       println("  tensors \{f.tensor_count()}, metadata \{f.metadata_count()}")
       // Touch the tensor package too, so the smoke test covers both libraries.
       let ty = @tensor.GgmlType::from_id(12)
-      println("  type 12 is \{ty.name} with \{ty.block_size} elements per block")
+      println(
+        "  type 12 is \{ty.name} with \{ty.block_size} elements per block",
+      )
     }
     Err(e) => {
       println("moonlm (wasm-gc smoke test): failed to parse: \{e.message()}")
@@ -40,6 +44,6 @@ fn main {
 ///|
 /// Terminate with `code`. On wasm-gc there is no process to exit, so the status
 /// is printed instead; the native path uses the libc `exit`.
-fn exit_with(code : Int) -> Unit {
+fn exit_with(code : Int32) -> Unit {
   println("exit status \{code}")
 }

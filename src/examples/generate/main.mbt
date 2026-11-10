@@ -1,6 +1,6 @@
 // Native-only example: the smallest program that loads a GGUF and generates.
 //
-// Usage: moon run src/examples/generate -- <model.gguf> "<prompt>" [max_tokens]
+// Usage: moon run src/examples/generate --target native --release -- <model.gguf> "<prompt>" [max_tokens]
 //
 // This exists to show the library's shape in about a page: read bytes,
 // `PureEngine::load_bytes`, `Engine::generate` with a callback. It deliberately
@@ -17,24 +17,24 @@ priv type ExFile
 extern "C" fn ex_fopen(path : Bytes, mode : Bytes) -> ExFile = "ex_fopen"
 
 ///|
-extern "C" fn ex_fclose(f : ExFile) -> Int = "ex_fclose"
+extern "C" fn ex_fclose(f : ExFile) -> Int32 = "ex_fclose"
 
 ///|
 extern "C" fn ex_size(f : ExFile) -> Int64 = "ex_size"
 
 ///|
-extern "C" fn ex_is_null(f : ExFile) -> Int = "ex_is_null"
+extern "C" fn ex_is_null(f : ExFile) -> Int32 = "ex_is_null"
 
 ///|
 #borrow(handle)
 extern "C" fn ex_read_owned(handle : ExFile, n : Int64) -> Bytes = "ex_read_owned"
 
 ///|
-extern "C" fn ex_exit(code : Int) -> Unit = "ex_exit"
+extern "C" fn ex_exit(code : Int32) -> Unit = "ex_exit"
 
 ///|
 #borrow(s)
-extern "C" fn ex_puts(s : Bytes) -> Int = "ex_puts"
+extern "C" fn ex_puts(s : Bytes) -> Int32 = "ex_puts"
 
 ///|
 /// Write `s` to stdout without a trailing newline, then flush.
@@ -84,15 +84,11 @@ fn usage() -> String {
 /// Parse the optional third argument. Returns `None` on anything that is not a
 /// positive integer, so the caller can print usage instead of generating zero
 /// tokens and looking like it worked.
-fn parse_max_tokens(argv : Array[String]) -> Int? {
+fn parse_max_tokens(argv : Array[String]) -> Int32? {
   if argv.length() < 4 {
     return Some(64)
   }
-  let parsed = try {
-    @string.parse_int(argv[3][:])
-  } catch {
-    _ => -1
-  }
+  let parsed = @string.parse_int(argv[3][:]) catch { _ => -1 }
   if parsed <= 0 {
     None
   } else {
@@ -103,7 +99,7 @@ fn parse_max_tokens(argv : Array[String]) -> Int? {
 ///|
 /// Do the work and return an exit code, so every branch has one type and the
 /// process exits exactly once.
-fn run(model_path : String, prompt : String, max_tokens : Int) -> Int {
+fn run(model_path : String, prompt : String, max_tokens : Int32) -> Int32 {
   let bytes = match read_whole(model_path) {
     Ok(b) => b
     Err(e) => {
@@ -152,6 +148,7 @@ fn run(model_path : String, prompt : String, max_tokens : Int) -> Int {
   }
 }
 
+///|
 fn main {
   let argv = @env.args()
   if argv.length() < 3 {

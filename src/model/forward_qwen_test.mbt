@@ -12,7 +12,7 @@
 ///|
 test "qwen2 forward pass matches the numpy reference" {
   let f = @gguf.parse(forward_qwen_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   // The config must have come from the file: NEOX from the per-layer keys and
   // an untied LM head.
   assert_eq(m.config.architecture, "qwen2")
@@ -69,7 +69,7 @@ test "qwen2 fixture decode step continues the prefill" {
   // play, a mistake in when they are applied (before vs after RoPE) shows up
   // differently for cached and fresh positions only if the cache is mishandled.
   let f = @gguf.parse(forward_qwen_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   let n = forward_qwen_tokens.length()
   for pos = 0; pos < n - 1; pos = pos + 1 {
     m.forward(forward_qwen_tokens[pos], pos).unwrap()
@@ -94,7 +94,7 @@ test "a bias-free llama model still loads with no biases" {
   // bias vectors, and the existing NORMAL fixture still matches its reference
   // (forward_test.mbt). This checks the representation directly.
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   for lw in m.layers {
     assert_true(lw.bq is None)
     assert_true(lw.bk is None)

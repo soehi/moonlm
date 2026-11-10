@@ -7,6 +7,7 @@
 // unchecked.
 
 import {
+  "moonbitlang/core/debug",
   "moonbitlang/core/encoding/utf8",
   "moonbitlang/core/json",
   "moonbitlang/core/string",
@@ -15,6 +16,7 @@ import {
 
 // On wasm-gc the agent package is imported but unused by `calc`, which is the
 // only file compiled there; imports cannot be scoped per target.
+
 warnings = "-unused_package"
 
 options(

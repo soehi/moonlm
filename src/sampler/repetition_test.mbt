@@ -18,8 +18,10 @@ test "repetition window ignores older and invalid ids" {
 
 ///|
 test "cycle guard requires three full blocks" {
-  let ids : Array[Int] = []
-  for _ in 0..<2 { ids.append([1, 2, 3, 4, 5, 6, 7, 8][:]) }
+  let ids : Array[Int32] = []
+  for _ in 0..<2 {
+    ids.append([1, 2, 3, 4, 5, 6, 7, 8][:])
+  }
   assert_false(@sampler.has_repeated_suffix(ids))
   ids.append([1, 2, 3, 4, 5, 6, 7, 8][:])
   assert_true(@sampler.has_repeated_suffix(ids))

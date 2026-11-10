@@ -5,7 +5,7 @@
 ///|
 /// Options shared by generate, chat and bench.
 pub(all) struct GenOptions {
-  max_tokens : Int
+  max_tokens : Int32
   sampler : @sampler.Sampler
   seed : UInt64
   /// Wrap the prompt in the ChatML template before encoding.
@@ -26,7 +26,7 @@ pub(all) struct GenOptions {
 /// what the numbers mean.
 fn parse_gen_options(
   args : Array[String],
-  start : Int,
+  start : Int32,
 ) -> Result[GenOptions, String] {
   let mut max_tokens = 128
   let mut temperature = 0.0
@@ -38,8 +38,11 @@ fn parse_gen_options(
   let mut i = start
   while i < args.length() {
     let flag = args[i]
-    let takes_value = flag == "--max-tokens" || flag == "--temperature" ||
-      flag == "--top-k" || flag == "--top-p" || flag == "--seed"
+    let takes_value = flag == "--max-tokens" ||
+      flag == "--temperature" ||
+      flag == "--top-k" ||
+      flag == "--top-p" ||
+      flag == "--seed"
     if takes_value && i + 1 >= args.length() {
       return Err("\{flag} needs a value")
     }
@@ -85,18 +88,18 @@ fn parse_gen_options(
   let sampler : @sampler.Sampler = if temperature <= 0.0 {
     @sampler.Greedy
   } else if top_k > 0 {
-    @sampler.TopK(temperature=temperature, k=top_k)
+    @sampler.TopK(temperature~, k=top_k)
   } else if top_p > 0.0 {
-    @sampler.TopP(temperature=temperature, p=top_p)
+    @sampler.TopP(temperature~, p=top_p)
   } else {
-    @sampler.Temperature(temperature=temperature)
+    @sampler.Temperature(temperature~)
   }
-  Ok({ max_tokens, sampler, seed, use_chat_template, dump_tokens })
+  Ok({ max_tokens, sampler, seed, use_chat_template, dump_tokens, })
 }
 
 ///|
 /// Parse an integer CLI argument, reporting usage rather than raising.
-fn parse_int_arg(s : String) -> Result[Int, String] {
+fn parse_int_arg(s : String) -> Result[Int32, String] {
   try @string.parse_int(s[:]) catch {
     _ => Err("'\{s}' is not an integer")
   } noraise {
@@ -136,7 +139,7 @@ let default_system_prompt : String = "You are a helpful AI assistant named SmolL
 /// template renders for a single user turn. `--raw` bypasses it for raw
 /// completion prompts and for comparing against a non-instruct reference.
 pub fn apply_chat_template(user : String, system : String) -> String {
-  let sb = StringBuilder::new()
+  let sb = StringBuilder()
   sb.write_string("<|im_start|>system\n\{system}<|im_end|>\n")
   sb.write_string("<|im_start|>user\n\{user}<|im_end|>\n")
   sb.write_string("<|im_start|>assistant\n")
@@ -145,7 +148,7 @@ pub fn apply_chat_template(user : String, system : String) -> String {
 
 ///|
 /// `moonlm tokenize <model.gguf> <text>` — show the encoding.
-fn run_tokenize(args : Array[String]) -> Int {
+fn run_tokenize(args : Array[String]) -> Int32 {
   if args.length() < 4 {
     println("error: 'tokenize' needs a model path and a string\n")
     println(usage())
@@ -179,7 +182,7 @@ fn run_tokenize(args : Array[String]) -> Int {
 
 ///|
 /// `moonlm generate <model.gguf> <prompt>` — print a completion.
-fn run_generate(args : Array[String]) -> Int {
+fn run_generate(args : Array[String]) -> Int32 {
   if args.length() < 4 {
     println("error: 'generate' needs a model path and a prompt\n")
     println(usage())
@@ -211,7 +214,7 @@ fn run_generate(args : Array[String]) -> Int {
   // tokens, so a piece on its own is not always printable text; the caller that
   // needs clean output should decode the accumulated tokens instead, which is
   // what the final summary line does.
-  let ids : Array[Int] = []
+  let ids : Array[Int32] = []
   let result = @engine.Engine::generate(
     engine,
     full_prompt,
@@ -252,7 +255,7 @@ fn run_generate(args : Array[String]) -> Int {
 /// each new turn prefills only its own tokens. When a turn would run past the
 /// context window the history is dropped and the cache reset, which keeps the
 /// session usable instead of failing once the window fills.
-fn run_chat(args : Array[String]) -> Int {
+fn run_chat(args : Array[String]) -> Int32 {
   if args.length() < 3 {
     println("error: 'chat' needs a model path\n")
     println(usage())
@@ -333,7 +336,7 @@ fn run_chat(args : Array[String]) -> Int {
     // Decode, re-decoding the accumulated tokens each step so a character split
     // across tokens is never printed as broken bytes. The carriage return lets
     // the growing text overwrite the previous line.
-    let produced : Array[Int] = []
+    let produced : Array[Int32] = []
     let mut next = turn_tokens[turn_tokens.length() - 1]
     let mut hit_eos = false
     print_raw("bot> ")
@@ -346,7 +349,8 @@ fn run_chat(args : Array[String]) -> Int {
         }
       }
       engine.model.cache.len = pos + 1
-      let sampled = match @sampler.sample(engine.model.logits(), opts.sampler, rng) {
+      let sampled = match
+        @sampler.sample(engine.model.logits(), opts.sampler, rng) {
         Ok(t) => t
         Err(e) => {
           println("error: \{e.message()}")
@@ -391,7 +395,7 @@ fn run_chat(args : Array[String]) -> Int {
 /// prefill is one pass over the prompt, decode is the per-token loop whose rate
 /// is what a user perceives. A warm-up forward runs first so page faults and
 /// lazy initialization do not land in the measurement.
-fn run_bench(args : Array[String]) -> Int {
+fn run_bench(args : Array[String]) -> Int32 {
   if args.length() < 3 {
     println("error: 'bench' needs a model path\n")
     println(usage())
@@ -477,7 +481,8 @@ fn run_bench(args : Array[String]) -> Int {
       }
     }
     engine.model.cache.len = pos + 1
-    let sampled = match @sampler.sample(engine.model.logits(), @sampler.Greedy, rng) {
+    let sampled = match
+      @sampler.sample(engine.model.logits(), @sampler.Greedy, rng) {
       Ok(t) => t
       Err(e) => {
         println("error: \{e.message()}")

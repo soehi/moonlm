@@ -3,12 +3,12 @@
 
 ///|
 fn pieces_text(s : String) -> String {
-  pretokenize_text(s).map(fn(p) { "<\{p}>" }).join("")
+  @tokenizer.pretokenize_text(s).map(fn(p) { "<\{p}>" }).join("")
 }
 
 ///|
-fn pieces_with(pre : Pretokenizer, s : String) -> String {
-  pretokenize(pre, s).map(fn(p) { "<\{p}>" }).join("")
+fn pieces_with(pre : @tokenizer.Pretokenizer, s : String) -> String {
+  @tokenizer.pretokenize(pre, s).map(fn(p) { "<\{p}>" }).join("")
 }
 
 ///|
@@ -58,7 +58,7 @@ test "newlines split as whitespace" {
 
 ///|
 test "empty input produces no pieces" {
-  inspect(pretokenize_text("").length(), content="0")
+  inspect(@tokenizer.pretokenize_text("").length(), content="0")
 }
 
 // --- variant selection -------------------------------------------------------
@@ -116,5 +116,8 @@ test "smollm digit chunks isolate lookahead at chunk boundaries" {
   // `Digits` cuts text into chunks, so the regex's `\s+(?!\S)` at the end of a
   // chunk cannot see the following digit: "\n\xa0" stays together instead of
   // splitting off the NBSP.
-  inspect(pieces_with(Smollm, ">,\n\u{00a0}1Z"), content="<>,><\n\u{00a0}><1><Z>")
+  inspect(
+    pieces_with(Smollm, ">,\n\u{00a0}1Z"),
+    content="<>,><\n\u{00a0}><1><Z>",
+  )
 }

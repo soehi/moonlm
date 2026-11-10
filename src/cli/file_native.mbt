@@ -20,13 +20,13 @@ pub type MlFile
 extern "C" fn ml_fopen(path : Bytes, mode : Bytes) -> MlFile = "ml_fopen"
 
 ///|
-extern "C" fn ml_fclose(f : MlFile) -> Int = "ml_fclose"
+extern "C" fn ml_fclose(f : MlFile) -> Int32 = "ml_fclose"
 
 ///|
 extern "C" fn ml_size(f : MlFile) -> Int64 = "ml_size"
 
 ///|
-extern "C" fn ml_is_null(f : MlFile) -> Int = "ml_is_null"
+extern "C" fn ml_is_null(f : MlFile) -> Int32 = "ml_is_null"
 
 ///|
 /// Encode a MoonBit string as a NUL-terminated UTF-8 byte buffer.
@@ -77,15 +77,13 @@ pub fn read_file(path : String) -> Result[Bytes, String] {
   let buf = ml_read_owned(f, size)
   ml_fclose(f) |> ignore
   if buf.length().to_int64() != size {
-    return Err(
-      "short read on \{path}: got \{buf.length()} of \{size} bytes",
-    )
+    return Err("short read on \{path}: got \{buf.length()} of \{size} bytes")
   }
   Ok(buf)
 }
 
 ///|
-extern "C" fn ml_exit(code : Int) -> Unit = "ml_exit"
+extern "C" fn ml_exit(code : Int32) -> Unit = "ml_exit"
 
 ///|
 /// Terminate the process with `code`.
@@ -93,13 +91,13 @@ extern "C" fn ml_exit(code : Int) -> Unit = "ml_exit"
 /// Declared here rather than used directly because `exit` is a native-only
 /// libc symbol; routing it through this file keeps the non-native entry point
 /// free of platform assumptions.
-pub fn exit_with(code : Int) -> Unit {
+pub fn exit_with(code : Int32) -> Unit {
   ml_exit(code)
 }
 
 ///|
 #borrow(buf, n)
-extern "C" fn ml_stdin_read(buf : FixedArray[Byte], n : Int) -> Int = "ml_stdin_read"
+extern "C" fn ml_stdin_read(buf : FixedArray[Byte], n : Int32) -> Int32 = "ml_stdin_read"
 
 ///|
 /// Read one line from stdin, without the trailing newline.
@@ -114,7 +112,7 @@ pub fn read_line() -> String? {
     return None
   }
   let raw = Bytes::from_array(buf[:n])
-  let text = @utf8.decode_lossy(raw.view())
+  let text = @utf8.decode_lossy(raw.exact_view())
   // Trim the line terminator the C side left in place.
   let mut end = text.length()
   while end > 0 {
@@ -130,7 +128,7 @@ pub fn read_line() -> String? {
 
 ///|
 #borrow(s)
-extern "C" fn ml_puts(s : Bytes) -> Int = "ml_puts"
+extern "C" fn ml_puts(s : Bytes) -> Int32 = "ml_puts"
 
 ///|
 /// Write `s` to stdout without a trailing newline, then flush.
@@ -141,4 +139,3 @@ extern "C" fn ml_puts(s : Bytes) -> Int = "ml_puts"
 pub fn print_raw(s : String) -> Unit {
   ml_puts(@utf8.encode(s) + b"\x00") |> ignore
 }
-

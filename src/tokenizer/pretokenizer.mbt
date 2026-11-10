@@ -30,7 +30,7 @@
 ///|
 /// Contractions `'s 't 're 've 'm 'll 'd, matched exactly as the regex
 /// alternation's first branch — note these match without any leading space.
-fn match_contractions(chars : Array[Char], i : Int, n : Int) -> Int? {
+fn match_contractions(chars : Array[Char], i : Int32, n : Int32) -> Int32? {
   if i >= n || chars[i] != '\'' {
     return None
   }
@@ -41,7 +41,9 @@ fn match_contractions(chars : Array[Char], i : Int, n : Int) -> Int? {
     }
     if i + 2 < n {
       let c2 = chars[i + 2]
-      if (c == 'r' && c2 == 'e') || (c == 'v' && c2 == 'e') || (c == 'l' && c2 == 'l') {
+      if (c == 'r' && c2 == 'e') ||
+        (c == 'v' && c2 == 'e') ||
+        (c == 'l' && c2 == 'l') {
         return Some(i + 3)
       }
     }
@@ -56,7 +58,11 @@ fn match_contractions(chars : Array[Char], i : Int, n : Int) -> Int? {
 /// The SmolLM2 scanner runs this per digit-free chunk (see
 /// `pretokenize_smollm`), so `\p{N}` never reaches the class test; the branch is
 /// kept so the function matches the regex on its own terms.
-fn match_leading_space_class(chars : Array[Char], i : Int, n : Int) -> Int? {
+fn match_leading_space_class(
+  chars : Array[Char],
+  i : Int32,
+  n : Int32,
+) -> Int32? {
   let mut j = i
   if chars[j] == ' ' {
     j = j + 1
@@ -107,7 +113,7 @@ fn match_leading_space_class(chars : Array[Char], i : Int, n : Int) -> Int? {
 /// extends to end-of-input matches whole. If the whole run is a single space
 /// followed by non-space, both whitespace branches fail and the ` ?` prefix of
 /// the class branches picks it up (already attempted above).
-fn match_whitespace(chars : Array[Char], i : Int, n : Int) -> Int? {
+fn match_whitespace(chars : Array[Char], i : Int32, n : Int32) -> Int32? {
   if !is_unicode_space(chars[i].to_int()) {
     return None
   }
@@ -129,8 +135,8 @@ fn match_whitespace(chars : Array[Char], i : Int, n : Int) -> Int? {
 
 ///|
 /// Join `chars[start..end)` into a String.
-fn chars_to_string(chars : Array[Char], start : Int, end : Int) -> String {
-  let sb = StringBuilder::new()
+fn chars_to_string(chars : Array[Char], start : Int32, end : Int32) -> String {
+  let sb = StringBuilder()
   for k = start; k < end; k = k + 1 {
     sb.write_char(chars[k])
   }
@@ -195,7 +201,12 @@ pub fn pretokenize_smollm(text : String) -> Array[String] {
   // whitespace chunk with the NBSP kept, not "\n" plus a separate NBSP.
   let mut chunk_start = 0
   let mut i = 0
-  let flush = fn(chars : Array[Char], start : Int, end : Int, pieces : Array[String]) {
+  let flush = fn(
+    chars : Array[Char],
+    start : Int32,
+    end : Int32,
+    pieces : Array[String],
+  ) {
     if end > start {
       match_whitespace_chunk(chars, start, end, pieces)
     }
@@ -221,8 +232,8 @@ pub fn pretokenize_smollm(text : String) -> Array[String] {
 /// end-of-input for the `\s+(?!\S)` lookahead.
 fn match_whitespace_chunk(
   chars : Array[Char],
-  start : Int,
-  end : Int,
+  start : Int32,
+  end : Int32,
   pieces : Array[String],
 ) -> Unit {
   let n = end
@@ -271,7 +282,7 @@ fn match_whitespace_chunk(
 ///
 /// `(?i:...)` folds case, so `'S` and `'RE` match. Checked before every other
 /// branch, and matched without a leading space.
-fn match_contractions_ci(chars : Array[Char], i : Int, n : Int) -> Int? {
+fn match_contractions_ci(chars : Array[Char], i : Int32, n : Int32) -> Int32? {
   if i >= n || chars[i] != '\'' {
     return None
   }
@@ -284,7 +295,9 @@ fn match_contractions_ci(chars : Array[Char], i : Int, n : Int) -> Int? {
   }
   if i + 2 < n {
     let c2 = ascii_lower(chars[i + 2])
-    if (c == 'r' && c2 == 'e') || (c == 'v' && c2 == 'e') || (c == 'l' && c2 == 'l') {
+    if (c == 'r' && c2 == 'e') ||
+      (c == 'v' && c2 == 'e') ||
+      (c == 'l' && c2 == 'l') {
       return Some(i + 3)
     }
   }
@@ -296,7 +309,7 @@ fn match_contractions_ci(chars : Array[Char], i : Int, n : Int) -> Int? {
 fn ascii_lower(c : Char) -> Char {
   let v = c.to_int()
   if v >= 0x41 && v <= 0x5A {
-    Int::unsafe_to_char(v + 0x20)
+    Int32::unsafe_to_char(v + 0x20)
   } else {
     c
   }
@@ -309,12 +322,14 @@ fn ascii_lower(c : Char) -> Char {
 /// one character that is not CR, LF, a letter, or a number. Letters then run
 /// until a non-letter. Returns `None` when the current position cannot start
 /// the branch.
-fn match_qwen2_letters(chars : Array[Char], i : Int, n : Int) -> Int? {
+fn match_qwen2_letters(chars : Array[Char], i : Int32, n : Int32) -> Int32? {
   let mut j = i
   let first = chars[j].to_int()
   if !is_unicode_letter(first) {
     // Try consuming one prefix character.
-    if j + 1 < n && first != 0x0D && first != 0x0A &&
+    if j + 1 < n &&
+      first != 0x0D &&
+      first != 0x0A &&
       !is_unicode_number(first) &&
       is_unicode_letter(chars[j + 1].to_int()) {
       j = j + 1
@@ -331,7 +346,7 @@ fn match_qwen2_letters(chars : Array[Char], i : Int, n : Int) -> Int? {
 
 ///|
 /// Qwen2 branch 4: ` ?[^\s\p{L}\p{N}]+[\r\n]*`.
-fn match_qwen2_punct(chars : Array[Char], i : Int, n : Int) -> Int? {
+fn match_qwen2_punct(chars : Array[Char], i : Int32, n : Int32) -> Int32? {
   let mut j = i
   if chars[j] == ' ' {
     j = j + 1
@@ -372,7 +387,7 @@ fn match_qwen2_punct(chars : Array[Char], i : Int, n : Int) -> Int? {
 /// run, and the piece ends right after it — trailing spaces stay for the next
 /// piece. For example the run " \n \n " (in "a \n \n b") yields " \n \n",
 /// matching HuggingFace.
-fn match_qwen2_ws_newline(chars : Array[Char], i : Int, n : Int) -> Int? {
+fn match_qwen2_ws_newline(chars : Array[Char], i : Int32, n : Int32) -> Int32? {
   if i >= n || !is_unicode_space(chars[i].to_int()) {
     return None
   }
@@ -439,3 +454,9 @@ pub fn pretokenize_qwen2(text : String) -> Array[String] {
   }
   pieces
 }
+
+///|
+pub extend Pretokenizer with Eq::{not_equal, equal}
+
+///|
+pub extend Pretokenizer with @debug.Debug::{to_repr}

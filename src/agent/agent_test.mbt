@@ -13,15 +13,15 @@
 /// length is a parameter so the overflow path is reachable.
 struct ScriptedEngine {
   replies : Array[String]
-  mut calls : Int
-  ctx : Int
+  mut calls : Int32
+  ctx : Int32
 } derive(Debug)
 
 ///|
 impl @engine.Engine for ScriptedEngine with fn encode(
   _self : ScriptedEngine,
   text : String,
-) -> Result[Array[Int], String] {
+) -> Result[Array[Int32], String] {
   let _ = text
   Ok([1])
 }
@@ -29,7 +29,7 @@ impl @engine.Engine for ScriptedEngine with fn encode(
 ///|
 impl @engine.Engine for ScriptedEngine with fn decode(
   _self : ScriptedEngine,
-  tokens : Array[Int],
+  tokens : Array[Int32],
 ) -> Result[String, String] {
   let _ = tokens
   Ok(scripted_reply.val)
@@ -38,7 +38,7 @@ impl @engine.Engine for ScriptedEngine with fn decode(
 ///|
 impl @engine.Engine for ScriptedEngine with fn context_length(
   self : ScriptedEngine,
-) -> Int {
+) -> Int32 {
   self.ctx
 }
 
@@ -46,10 +46,10 @@ impl @engine.Engine for ScriptedEngine with fn context_length(
 impl @engine.Engine for ScriptedEngine with fn generate(
   self : ScriptedEngine,
   prompt : String,
-  max_tokens : Int,
+  max_tokens : Int32,
   sampler : @sampler.Sampler,
   seed : UInt64,
-  on_token : (Int, String) -> Unit,
+  on_token : (Int32, String) -> Unit,
 ) -> Result[@engine.GenerationStats, String] {
   let _ = (prompt, max_tokens, sampler, seed)
   let i = self.calls
@@ -94,9 +94,7 @@ impl Tool for EchoTool with fn description(self : EchoTool) -> String {
 }
 
 ///|
-impl Tool for EchoTool with fn parameters_schema(
-  self : EchoTool,
-) -> Json {
+impl Tool for EchoTool with fn parameters_schema(self : EchoTool) -> Json {
   let _ = self
   {
     "type": Json::string("object"),
@@ -107,20 +105,16 @@ impl Tool for EchoTool with fn parameters_schema(
 }
 
 ///|
-impl Tool for EchoTool with fn invoke(
-  self : EchoTool,
-  args : Json,
-) -> Result[ToolOutput, ToolError] {
+impl Tool for EchoTool with fn invoke(self : EchoTool, args : Json) -> Result[
+  @agent.ToolOutput,
+  @agent.ToolError,
+] {
   match args {
     Object(fields) =>
       match fields.get("path") {
         Some(String(p)) => {
           self.calls.val.push(p)
-          Ok({
-            text: "echo: \{p}",
-            truncated: false,
-            provides_evidence: true,
-          })
+          Ok({ text: "echo: \{p}", truncated: false, provides_evidence: true, })
         }
         _ => Err(InvalidArguments(message="path must be a string"))
       }
@@ -151,30 +145,27 @@ impl Tool for DenyTool with fn parameters_schema(self : DenyTool) -> Json {
 }
 
 ///|
-impl Tool for DenyTool with fn invoke(
-  self : DenyTool,
-  args : Json,
-) -> Result[ToolOutput, ToolError] {
+impl Tool for DenyTool with fn invoke(self : DenyTool, args : Json) -> Result[
+  @agent.ToolOutput,
+  @agent.ToolError,
+] {
   let _ = (self, args)
   Err(SandboxDenied(message="path escapes the workspace"))
 }
 
 ///|
 /// Build a registry with one calling tool and one denying tool.
-fn test_registry(calls : Ref[Array[String]]) -> ToolRegistry {
-  let r = ToolRegistry::new()
-  r.add(EchoTool::{ calls }) |> ignore
-  r.add(DenyTool::{}) |> ignore
+fn test_registry(calls : Ref[Array[String]]) -> @agent.ToolRegistry {
+  let r = @agent.ToolRegistry::new()
+  r.add(EchoTool::{ calls, }) |> ignore
+  r.add(DenyTool::{ }) |> ignore
   r
 }
-
 
 ///|
 /// Parse a JSON test literal, failing the test rather than raising.
 fn json(value~ : String) -> Json raise {
-  try {
-    @json.parse(value)
-  } catch {
+  @json.parse(value) catch {
     e => fail("bad test JSON: \{e}")
   }
 }
@@ -184,7 +175,7 @@ fn json(value~ : String) -> Json raise {
 ///|
 test "qwen2 parses a single well-formed call" {
   let text = "<tool_call>\n{\"name\": \"echo\", \"arguments\": {\"path\": \"docs\"}}\n</tool_call>"
-  let p = parse_completion(Qwen2Xml, text)
+  let p = @agent.parse_completion(Qwen2Xml, text)
   assert_eq(p.calls.length(), 1)
   assert_eq(p.calls[0].name, "echo")
   assert_eq(p.calls[0].arguments.stringify(), "{\"path\":\"docs\"}")
@@ -195,7 +186,7 @@ test "qwen2 parses a single well-formed call" {
 ///|
 test "qwen2 parses text around and between calls" {
   let text = "Let me look.\n<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"a\"}}</tool_call>\nAgain.\n<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"b\"}}</tool_call>\nDone."
-  let p = parse_completion(Qwen2Xml, text)
+  let p = @agent.parse_completion(Qwen2Xml, text)
   assert_eq(p.calls.length(), 2)
   assert_eq(p.calls[0].arguments.stringify(), "{\"path\":\"a\"}")
   assert_eq(p.calls[1].arguments.stringify(), "{\"path\":\"b\"}")
@@ -206,7 +197,7 @@ test "qwen2 parses text around and between calls" {
 ///|
 test "qwen2 accepts arguments as a JSON string" {
   let text = "<tool_call>{\"name\": \"echo\", \"arguments\": \"{\\\"path\\\": \\\"x\\\"}\"}</tool_call>"
-  let p = parse_completion(Qwen2Xml, text)
+  let p = @agent.parse_completion(Qwen2Xml, text)
   assert_eq(p.calls.length(), 1)
   assert_eq(p.calls[0].arguments.stringify(), "{\"path\":\"x\"}")
 }
@@ -214,7 +205,7 @@ test "qwen2 accepts arguments as a JSON string" {
 ///|
 test "qwen2 accepts hoisted arguments" {
   let text = "<tool_call>{\"name\": \"echo\", \"path\": \"x\"}</tool_call>"
-  let p = parse_completion(Qwen2Xml, text)
+  let p = @agent.parse_completion(Qwen2Xml, text)
   assert_eq(p.calls.length(), 1)
   assert_eq(p.calls[0].arguments.stringify(), "{\"path\":\"x\"}")
 }
@@ -222,7 +213,7 @@ test "qwen2 accepts hoisted arguments" {
 ///|
 test "qwen2 reports malformed bodies without dropping valid calls" {
   let text = "<tool_call>not json</tool_call><tool_call>{\"name\": \"echo\", \"arguments\": {}}</tool_call>"
-  let p = parse_completion(Qwen2Xml, text)
+  let p = @agent.parse_completion(Qwen2Xml, text)
   assert_eq(p.calls.length(), 1)
   assert_eq(p.errors.length(), 1)
   assert_true(p.errors[0].contains("not valid JSON"))
@@ -230,7 +221,7 @@ test "qwen2 reports malformed bodies without dropping valid calls" {
 
 ///|
 test "qwen2 rejects an unterminated call" {
-  let p = parse_completion(Qwen2Xml, "<tool_call>{\"name\": \"echo\"}")
+  let p = @agent.parse_completion(Qwen2Xml, "<tool_call>{\"name\": \"echo\"}")
   assert_eq(p.calls.length(), 0)
   assert_eq(p.errors.length(), 1)
   assert_true(p.errors[0].contains("unterminated"))
@@ -248,7 +239,7 @@ test "qwen2 rejects missing, empty and non-object calls" {
   ]
   for pair in cases {
     let (body, want) = pair
-    let p = parse_completion(Qwen2Xml, "<tool_call>\{body}</tool_call>")
+    let p = @agent.parse_completion(Qwen2Xml, "<tool_call>\{body}</tool_call>")
     assert_eq(p.calls.length(), 0)
     assert_eq(p.errors.length(), 1)
     assert_true(p.errors[0].contains(want))
@@ -257,7 +248,7 @@ test "qwen2 rejects missing, empty and non-object calls" {
 
 ///|
 test "a plain answer parses as text only" {
-  let p = parse_completion(Qwen2Xml, "The answer is 42.")
+  let p = @agent.parse_completion(Qwen2Xml, "The answer is 42.")
   assert_eq(p.calls.length(), 0)
   assert_eq(p.errors, [])
   assert_eq(p.text, "The answer is 42.")
@@ -266,7 +257,7 @@ test "a plain answer parses as text only" {
 // --- schema ----------------------------------------------------------------
 
 ///|
-fn schema_of(tool : &Tool) -> Json {
+fn schema_of(tool : &@agent.Tool) -> Json {
   tool.parameters_schema()
 }
 
@@ -275,7 +266,7 @@ test "schema accepts a matching object" {
   let r = test_registry(Ref([]))
   let tool = r.find("echo").unwrap()
   let args = json(value="{\"path\": \"docs\"}")
-  assert_eq(validate(schema_of(tool), args), Ok(()))
+  assert_eq(@agent.validate(schema_of(tool), args), Ok(()))
 }
 
 ///|
@@ -290,8 +281,8 @@ test "schema rejects missing, mistyped and extra fields" {
   ]
   for pair in cases {
     let (args, want) = pair
-    let j = json(value=args) 
-    match validate(schema, j) {
+    let j = json(value=args)
+    match @agent.validate(schema, j) {
       Ok(_) => fail("expected rejection for \{args}")
       Err(e) => assert_true(e.to_string().contains(want))
     }
@@ -303,25 +294,30 @@ test "schema enforces enum, integer, bounds and arrays" {
   let schema = json(
     value="{\"type\":\"object\",\"properties\":{\"mode\":{\"type\":\"string\",\"enum\":[\"a\",\"b\"]},\"n\":{\"type\":\"integer\",\"minimum\":1},\"items\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"mode\"]}",
   )
-  
-  let ok = json(value="{\"mode\":\"a\",\"n\":2,\"items\":[\"x\"],\"extra\":true}")
-  
-  assert_eq(validate(schema, ok), Ok(()))
-  let bad_enum = json(value="{\"mode\":\"c\"}") 
-  assert_true(
-    validate(schema, bad_enum).unwrap_err().message.contains("one of"),
+
+  let ok = json(
+    value="{\"mode\":\"a\",\"n\":2,\"items\":[\"x\"],\"extra\":true}",
   )
-  let not_int = json(value="{\"mode\":\"a\",\"n\":1.5}") 
+
+  assert_eq(@agent.validate(schema, ok), Ok(()))
+  let bad_enum = json(value="{\"mode\":\"c\"}")
   assert_true(
-    validate(schema, not_int).unwrap_err().message.contains("integer"),
+    @agent.validate(schema, bad_enum).unwrap_err().message.contains("one of"),
   )
-  let too_small = json(value="{\"mode\":\"a\",\"n\":0}") 
+  let not_int = json(value="{\"mode\":\"a\",\"n\":1.5}")
   assert_true(
-    validate(schema, too_small).unwrap_err().message.contains(">="),
+    @agent.validate(schema, not_int).unwrap_err().message.contains("integer"),
   )
-  let bad_item = json(value="{\"mode\":\"a\",\"items\":[3]}") 
+  let too_small = json(value="{\"mode\":\"a\",\"n\":0}")
   assert_true(
-    validate(schema, bad_item).unwrap_err().to_string().contains("items[0]"),
+    @agent.validate(schema, too_small).unwrap_err().message.contains(">="),
+  )
+  let bad_item = json(value="{\"mode\":\"a\",\"items\":[3]}")
+  assert_true(
+    @agent.validate(schema, bad_item)
+    .unwrap_err()
+    .to_string()
+    .contains("items[0]"),
   )
 }
 
@@ -329,14 +325,16 @@ test "schema enforces enum, integer, bounds and arrays" {
 
 ///|
 test "observations truncate on character count, not bytes" {
-  let (short, cut) = truncate_observation("abc", 10)
+  let (short, cut) = @agent.truncate_observation("abc", 10)
   assert_eq(short, "abc")
   assert_false(cut)
   // Ten CJK characters are 30 bytes but 10 characters.
-  let (cjk, cut2) = truncate_observation("中文中文中文中文中文", 10)
+  let (cjk, cut2) = @agent.truncate_observation(
+    "中文中文中文中文中文", 10,
+  )
   assert_false(cut2)
   assert_eq(cjk, "中文中文中文中文中文")
-  let (long, cut3) = truncate_observation("abcdefghij", 4)
+  let (long, cut3) = @agent.truncate_observation("abcdefghij", 4)
   assert_true(cut3)
   assert_true(long.contains("abcd"))
   assert_true(long.contains("truncated"))
@@ -355,13 +353,13 @@ test "the loop runs a call and returns the final answer" {
     calls: 0,
     ctx: 100000,
   }
-  let result = run_agent(
+  let result = @agent.run_agent(
     engine,
     test_registry(calls),
     Qwen2Xml,
     Qwen2ChatMl,
     "go",
-    AgentConfig::default(),
+    @agent.AgentConfig::default(),
   )
   assert_eq(result.stop, Answered)
   assert_eq(result.answer, "All done.")
@@ -374,21 +372,20 @@ test "the loop runs a call and returns the final answer" {
 test "a sandbox denial is fed back as an observation, not fatal" {
   let engine = ScriptedEngine::{
     replies: [
-      "<tool_call>{\"name\": \"deny\", \"arguments\": {}}</tool_call>",
-      "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"ok\"}}</tool_call>",
+      "<tool_call>{\"name\": \"deny\", \"arguments\": {}}</tool_call>", "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"ok\"}}</tool_call>",
       "Recovered.",
     ],
     calls: 0,
     ctx: 100000,
   }
   let calls = Ref([])
-  let result = run_agent(
+  let result = @agent.run_agent(
     engine,
     test_registry(calls),
     Qwen2Xml,
     Qwen2ChatMl,
     "go",
-    AgentConfig::default(),
+    @agent.AgentConfig::default(),
   )
   assert_eq(result.stop, Answered)
   assert_eq(result.answer, "Recovered.")
@@ -401,20 +398,18 @@ test "a sandbox denial is fed back as an observation, not fatal" {
 ///|
 test "invalid arguments terminate the step" {
   let engine = ScriptedEngine::{
-    replies: [
-      "<tool_call>{\"name\": \"echo\", \"arguments\": {}}</tool_call>",
-    ],
+    replies: ["<tool_call>{\"name\": \"echo\", \"arguments\": {}}</tool_call>"],
     calls: 0,
     ctx: 100000,
   }
   let calls = Ref([])
-  let result = run_agent(
+  let result = @agent.run_agent(
     engine,
     test_registry(calls),
     Qwen2Xml,
     Qwen2ChatMl,
     "go",
-    AgentConfig::default(),
+    @agent.AgentConfig::default(),
   )
   match result.stop {
     InvalidArguments(message~) => assert_true(message.contains("path"))
@@ -434,19 +429,19 @@ test "an unknown tool is an observation, not a crash" {
       "<tool_call>{\"name\": \"nope\", \"arguments\": {}}</tool_call>",
       // The unknown tool produced no evidence, so the gate asks once; a real
       // tool call supplies it and the following text is accepted.
-      "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}</tool_call>",
+       "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}</tool_call>",
       "Fine, no tools then.",
     ],
     calls: 0,
     ctx: 100000,
   }
-  let result = run_agent(
+  let result = @agent.run_agent(
     engine,
     test_registry(Ref([])),
     Qwen2Xml,
     Qwen2ChatMl,
     "go",
-    AgentConfig::default(),
+    @agent.AgentConfig::default(),
   )
   assert_eq(result.stop, Answered)
   assert_eq(result.executed.length(), 2)
@@ -461,19 +456,19 @@ test "a malformed call is reported once and the loop continues" {
       "<tool_call>oops</tool_call>",
       // The gate asks once for evidence because no tool has succeeded yet;
       // the echo call supplies it, and the following text is accepted.
-      "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}</tool_call>",
+       "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}</tool_call>",
       "Sorry, here is the answer.",
     ],
     calls: 0,
     ctx: 100000,
   }
-  let result = run_agent(
+  let result = @agent.run_agent(
     engine,
     test_registry(Ref([])),
     Qwen2Xml,
     Qwen2ChatMl,
     "go",
-    AgentConfig::default(),
+    @agent.AgentConfig::default(),
   )
   assert_eq(result.stop, Answered)
   assert_eq(result.answer, "Sorry, here is the answer.")
@@ -485,14 +480,16 @@ test "a malformed call is reported once and the loop continues" {
 ///|
 test "the step budget stops a model that never answers" {
   let engine = ScriptedEngine::{
-    replies: Array::make(10, "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}</tool_call>"),
+    replies: Array::make(
+      10, "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}</tool_call>",
+    ),
     calls: 0,
     ctx: 100000,
   }
   let calls = Ref([])
-  let mut config = AgentConfig::default()
-  config = { ..config, max_steps: 3 }
-  let result = run_agent(
+  let mut config = @agent.AgentConfig::default()
+  config = { ..config, max_steps: 3, }
+  let result = @agent.run_agent(
     engine,
     test_registry(calls),
     Qwen2Xml,
@@ -506,30 +503,26 @@ test "the step budget stops a model that never answers" {
 
 ///|
 test "an oversized prompt stops with ContextOverflow instead of failing" {
-  let engine = ScriptedEngine::{
-    replies: ["never reached"],
-    calls: 0,
-    ctx: 4,
-  }
-  let result = run_agent(
+  let engine = ScriptedEngine::{ replies: ["never reached"], calls: 0, ctx: 4, }
+  let result = @agent.run_agent(
     engine,
     test_registry(Ref([])),
     Qwen2Xml,
     Qwen2ChatMl,
     "a task long enough to exceed a four-token context",
-    AgentConfig::default(),
+    @agent.AgentConfig::default(),
   )
   assert_eq(result.stop, ContextOverflow)
 }
 
 ///|
 test "history folding keeps the most recent messages" {
-  let history : Array[Message] = [
+  let history : Array[@agent.Message] = [
     Text(role="user", content="first-" + "x".repeat(100)),
     Assistant(content="a".repeat(100)),
     Text(role="user", content="latest-" + "y".repeat(50)),
   ]
-  let folded = fold_history(history, 200)
+  let folded = @agent.fold_history(history, 200)
   assert_true(folded.length() >= 1)
   match folded[folded.length() - 1] {
     Text(content~, ..) => assert_true(content.has_prefix("latest-"))
@@ -539,9 +532,9 @@ test "history folding keeps the most recent messages" {
 
 ///|
 test "duplicate tool names are rejected" {
-  let r = ToolRegistry::new()
-  r.add(EchoTool::{ calls: Ref([]) }) |> ignore
-  match r.add(EchoTool::{ calls: Ref([]) }) {
+  let r = @agent.ToolRegistry::new()
+  r.add(EchoTool::{ calls: Ref([]), }) |> ignore
+  match r.add(EchoTool::{ calls: Ref([]), }) {
     Ok(_) => fail("a duplicate tool name must be rejected")
     Err(e) => assert_true(e.contains("duplicate"))
   }
@@ -549,7 +542,7 @@ test "duplicate tool names are rejected" {
 
 ///|
 test "a bare JSON call is recognised when it is the whole completion" {
-  let p = parse_completion(
+  let p = @agent.parse_completion(
     Qwen2Xml,
     "{\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}",
   )
@@ -558,14 +551,14 @@ test "a bare JSON call is recognised when it is the whole completion" {
   assert_eq(p.text, "")
   // Surrounding prose keeps it as text: an answer that merely mentions JSON
   // must not become a tool call.
-  let answer = parse_completion(
+  let answer = @agent.parse_completion(
     Qwen2Xml,
     "The config is {\"name\": \"echo\", \"arguments\": {\"path\": \"x\"}}.",
   )
   assert_eq(answer.calls.length(), 0)
   assert_true(answer.text.has_prefix("The config"))
   // A JSON object with no name is text, not a call.
-  let non_call = parse_completion(Qwen2Xml, "{\"x\": 1}")
+  let non_call = @agent.parse_completion(Qwen2Xml, "{\"x\": 1}")
   assert_eq(non_call.calls.length(), 0)
 }
 
@@ -575,8 +568,7 @@ test "the evidence gate rejects an answer given before any content was read" {
   // answers as if it had read the files. The gate asks once for evidence.
   let engine = ScriptedEngine::{
     replies: [
-      "<tool_call>{\"name\": \"deny\", \"arguments\": {}}</tool_call>",
-      "The files say: alpha, beta, gamma.",
+      "<tool_call>{\"name\": \"deny\", \"arguments\": {}}</tool_call>", "The files say: alpha, beta, gamma.",
       "<tool_call>{\"name\": \"echo\", \"arguments\": {\"path\": \"notes\"}}</tool_call>",
       "Now grounded.",
     ],
@@ -584,13 +576,13 @@ test "the evidence gate rejects an answer given before any content was read" {
     ctx: 100000,
   }
   let calls = Ref([])
-  let result = run_agent(
+  let result = @agent.run_agent(
     engine,
     test_registry(calls),
     Qwen2Xml,
     Qwen2ChatMl,
     "go",
-    AgentConfig::default(),
+    @agent.AgentConfig::default(),
   )
   assert_eq(result.stop, Answered)
   assert_eq(result.answer, "Now grounded.")
@@ -604,15 +596,14 @@ test "the evidence gate rejects an answer given before any content was read" {
 test "the evidence gate is off when configured off" {
   let engine = ScriptedEngine::{
     replies: [
-      "<tool_call>{\"name\": \"deny\", \"arguments\": {}}</tool_call>",
-      "An ungrounded answer is accepted.",
+      "<tool_call>{\"name\": \"deny\", \"arguments\": {}}</tool_call>", "An ungrounded answer is accepted.",
     ],
     calls: 0,
     ctx: 100000,
   }
-  let mut config = AgentConfig::default()
-  config = { ..config, require_evidence: false }
-  let result = run_agent(
+  let mut config = @agent.AgentConfig::default()
+  config = { ..config, require_evidence: false, }
+  let result = @agent.run_agent(
     engine,
     test_registry(Ref([])),
     Qwen2Xml,

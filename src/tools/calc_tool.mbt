@@ -18,9 +18,7 @@ pub impl @agent.Tool for CalcTool with fn description(self : CalcTool) -> String
 }
 
 ///|
-pub impl @agent.Tool for CalcTool with fn parameters_schema(
-  self : CalcTool,
-) -> Json {
+pub impl @agent.Tool for CalcTool with fn parameters_schema(self : CalcTool) -> Json {
   let _ = self
   calc_schema().to_json()
 }
@@ -39,10 +37,10 @@ pub fn calc_schema() -> @agent.Schema {
 }
 
 ///|
-pub impl @agent.Tool for CalcTool with fn invoke(
-  self : CalcTool,
-  args : Json,
-) -> Result[@agent.ToolOutput, @agent.ToolError] {
+pub impl @agent.Tool for CalcTool with fn invoke(self : CalcTool, args : Json) -> Result[
+  @agent.ToolOutput,
+  @agent.ToolError,
+] {
   let _ = self
   let expression = match calc_schema().decode(args) {
     Ok(a) => a.get("expression")
@@ -50,7 +48,7 @@ pub impl @agent.Tool for CalcTool with fn invoke(
   }
   match evaluate(expression) {
     Ok(v) =>
-      Ok({ text: format_number(v), truncated: false, provides_evidence: true })
+      Ok({ text: format_number(v), truncated: false, provides_evidence: true, })
     Err(e) => Err(InvalidArguments(message=e))
   }
 }
@@ -67,4 +65,15 @@ fn format_number(v : Double) -> String {
   } else {
     s
   }
+}
+
+///|
+pub extend CalcTool with @debug.Debug::{to_repr}
+
+///|
+pub extend CalcTool with @soehi/moonlm/agent.Tool::{
+  name,
+  invoke,
+  parameters_schema,
+  description,
 }

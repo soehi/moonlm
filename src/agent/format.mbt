@@ -78,7 +78,7 @@ fn parse_qwen2_xml(text : String) -> ParsedCompletion {
   let close_tag = "</tool_call>"
   let calls : Array[ParsedCall] = []
   let errors : Array[String] = []
-  let plain = StringBuilder::new()
+  let plain = StringBuilder()
   let mut rest = text
   let mut iterations = 0
   while true {
@@ -125,13 +125,11 @@ fn parse_qwen2_xml(text : String) -> ParsedCompletion {
   // final answer and the run ended without calling anything.
   if calls.is_empty() && errors.is_empty() {
     match parse_bare_json_call(plain_text) {
-      Some(call) => {
-        return { text: "", calls: [call], errors: [] }
-      }
+      Some(call) => return { text: "", calls: [call], errors: [], }
       None => ()
     }
   }
-  { text: plain_text, calls, errors }
+  { text: plain_text, calls, errors, }
 }
 
 ///|
@@ -202,12 +200,15 @@ fn parse_qwen2_call(body : String) -> Result[ParsedCall, String] {
     String(s) =>
       match parse_json_text(s.trim().to_owned()) {
         Ok(j) => j
-        Err(e) => return Err("tool call \"arguments\" is a string that is not JSON: \{e}")
+        Err(e) =>
+          return Err(
+            "tool call \"arguments\" is a string that is not JSON: \{e}",
+          )
       }
     v => v
   }
   match arguments {
-    Object(_) => Ok({ name, arguments })
+    Object(_) => Ok({ name, arguments, })
     _ => Err("tool call \"arguments\" must be a JSON object")
   }
 }
@@ -218,9 +219,7 @@ fn parse_qwen2_call(body : String) -> Result[ParsedCall, String] {
 /// `@json.parse` raises `ParseError` rather than returning a `Result`, and this
 /// package handles model output, so the exception must not escape.
 fn parse_json_text(text : String) -> Result[Json, String] {
-  try {
-    Ok(@json.parse(text))
-  } catch {
+  Ok(@json.parse(text)) catch {
     e => Err(e.to_string())
   }
 }
@@ -230,7 +229,7 @@ fn parse_json_text(text : String) -> Result[Json, String] {
 ///
 /// A plain scan: this sees model output, so a real string search is the right
 /// tool; a regex engine would be a dependency for a single literal.
-pub fn find_substring(haystack : String, needle : String) -> Int? {
+pub fn find_substring(haystack : String, needle : String) -> Int32? {
   if needle == "" {
     return Some(0)
   }
@@ -246,3 +245,21 @@ pub fn find_substring(haystack : String, needle : String) -> Int? {
   }
   None
 }
+
+///|
+pub extend ToolCallFormat with Eq::{not_equal, equal}
+
+///|
+pub extend ToolCallFormat with @debug.Debug::{to_repr}
+
+///|
+pub extend ParsedCall with Eq::{not_equal, equal}
+
+///|
+pub extend ParsedCall with @debug.Debug::{to_repr}
+
+///|
+pub extend ParsedCompletion with Eq::{not_equal, equal}
+
+///|
+pub extend ParsedCompletion with @debug.Debug::{to_repr}

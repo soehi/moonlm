@@ -11,7 +11,7 @@
 
 ///|
 /// Whether `cp` falls in one of the sorted inclusive (lo, hi) ranges.
-fn in_ranges(ranges : Array[Int], cp : Int) -> Bool {
+fn in_ranges(ranges : Array[Int32], cp : Int32) -> Bool {
   let n = ranges.length() / 2
   let mut lo = 0
   let mut hi = n
@@ -32,18 +32,18 @@ fn in_ranges(ranges : Array[Int], cp : Int) -> Bool {
 
 ///|
 /// Whether `cp` is a Unicode letter (`\p{L}`).
-pub fn is_unicode_letter(cp : Int) -> Bool {
+pub fn is_unicode_letter(cp : Int32) -> Bool {
   in_ranges(unicode_letter_ranges, cp)
 }
 
 ///|
 /// Whether `cp` is a Unicode number (`\p{N}`).
-pub fn is_unicode_number(cp : Int) -> Bool {
+pub fn is_unicode_number(cp : Int32) -> Bool {
   in_ranges(unicode_number_ranges, cp)
 }
 
 ///|
 /// Whether `cp` is whitespace in the regex `\s` sense.
-pub fn is_unicode_space(cp : Int) -> Bool {
+pub fn is_unicode_space(cp : Int32) -> Bool {
   in_ranges(unicode_space_ranges, cp)
 }

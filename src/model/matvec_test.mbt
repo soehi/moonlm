@@ -13,11 +13,11 @@
 /// buffer; the padding and offset cases below cover non-zero bases.
 fn matrix_from_blocks(
   label : String,
-  type_id : Int,
-  rows : Int,
-  cols : Int,
+  type_id : Int32,
+  rows : Int32,
+  cols : Int32,
   blocks : Bytes,
-) -> Matrix {
+) -> @model.Matrix {
   let ty = @tensor.GgmlType::from_id(type_id)
   {
     name: label,
@@ -35,12 +35,12 @@ fn matrix_from_blocks(
 /// shared-buffer addressing that the loader relies on.
 fn matrix_at_offset(
   label : String,
-  type_id : Int,
-  rows : Int,
-  cols : Int,
+  type_id : Int32,
+  rows : Int32,
+  cols : Int32,
   blocks : Bytes,
-  base : Int,
-) -> Matrix {
+  base : Int32,
+) -> @model.Matrix {
   let ty = @tensor.GgmlType::from_id(type_id)
   {
     name: label,
@@ -66,9 +66,7 @@ fn close_enough(got : Float, want : Double, rel : Double) -> Bool {
 test "fused matvec matches the reference for every block type" {
   for c in matvec_cases {
     let m = matrix_from_blocks(c.label, c.type_id, c.rows, c.cols, c.blocks)
-    let x = FixedArray::from_array(
-      c.x.map(fn(v) { Float::from_double(v) })[:],
-    )
+    let x = FixedArray::from_array(c.x.map(fn(v) { Float::from_double(v) })[:])
     let y : FixedArray[Float] = FixedArray::make(c.rows, 0.0)
     m.matvec(x, y)
     for r = 0; r < c.rows; r = r + 1 {
@@ -85,9 +83,7 @@ test "fused matvec matches the reference for every block type" {
 test "matvec_at honours output offsets" {
   for c in matvec_cases {
     let m = matrix_from_blocks(c.label, c.type_id, c.rows, c.cols, c.blocks)
-    let x = FixedArray::from_array(
-      c.x.map(fn(v) { Float::from_double(v) })[:],
-    )
+    let x = FixedArray::from_array(c.x.map(fn(v) { Float::from_double(v) })[:])
     // Write into a padded buffer and compare the shifted region.
     let pad = 3
     let y : FixedArray[Float] = FixedArray::make(c.rows + pad, 0.0)
@@ -120,7 +116,6 @@ test "matvec_at honours input offsets" {
   }
 }
 
-
 ///|
 test "a non-zero base addresses the payload correctly" {
   // The loader now shares one file buffer across every matrix, addressing each
@@ -130,10 +125,15 @@ test "a non-zero base addresses the payload correctly" {
     let pad_len = 37
     let pad : FixedArray[Byte] = FixedArray::make(pad_len, b'\xAB')
     let combined = Bytes::from_array(pad[:]) + c.blocks
-    let m = matrix_at_offset(c.label, c.type_id, c.rows, c.cols, combined, pad_len)
-    let x = FixedArray::from_array(
-      c.x.map(fn(v) { Float::from_double(v) })[:],
+    let m = matrix_at_offset(
+      c.label,
+      c.type_id,
+      c.rows,
+      c.cols,
+      combined,
+      pad_len,
     )
+    let x = FixedArray::from_array(c.x.map(fn(v) { Float::from_double(v) })[:])
     let y : FixedArray[Float] = FixedArray::make(c.rows, 0.0)
     m.matvec(x, y)
     for r = 0; r < c.rows; r = r + 1 {

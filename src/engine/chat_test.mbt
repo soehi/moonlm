@@ -4,7 +4,11 @@ test "known chat profiles wrap user and open assistant turn" {
   assert_true(smol.contains("<|im_start|>user\nHello<|im_end|>"))
   assert_true(smol.contains("trained by Hugging Face"))
   assert_true(smol.has_suffix("<|im_start|>assistant\n"))
-  assert_true(@engine.format_chat("qwen2.5", "你好").unwrap().contains("created by Alibaba Cloud"))
+  assert_true(
+    @engine.format_chat("qwen2.5", "你好")
+    .unwrap()
+    .contains("created by Alibaba Cloud"),
+  )
 }
 
 ///|

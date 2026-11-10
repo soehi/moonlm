@@ -70,18 +70,18 @@ pub(all) struct LayerWeights {
 /// (layer, head) block rather than extending in place; `grow_to` rebuilds both
 /// arrays and copies the live region across.
 pub(all) struct KVCache {
-  n_layer : Int
-  n_head_kv : Int
-  head_dim : Int
+  n_layer : Int32
+  n_head_kv : Int32
+  head_dim : Int32
   /// Allocated positions; always <= `limit`.
-  mut capacity : Int
+  mut capacity : Int32
   /// Hard cap from the model's context length. Growth stops here.
-  limit : Int
+  limit : Int32
   /// Flattened as ((layer * n_head_kv + head) * capacity + pos) * head_dim + d.
   mut k : FixedArray[Float]
   mut v : FixedArray[Float]
   /// Number of positions written so far.
-  mut len : Int
+  mut len : Int32
 } derive(Debug)
 
 ///|
@@ -90,7 +90,7 @@ pub(all) struct KVCache {
 /// Large enough that an interactive turn never triggers a copy, small enough
 /// that the allocation is a rounding error next to the weights: 512 positions
 /// is about 24 MB for SmolLM2, against 360 MB for the full context.
-pub let kv_initial_capacity : Int = 512
+pub let kv_initial_capacity : Int32 = 512
 
 ///|
 /// Create a zeroed KV cache.
@@ -98,10 +98,10 @@ pub let kv_initial_capacity : Int = 512
 /// Allocates `min(kv_initial_capacity, limit)` positions, where `limit` is the
 /// model's context length and the ceiling that growth respects.
 pub fn KVCache::new(
-  n_layer : Int,
-  n_head_kv : Int,
-  head_dim : Int,
-  limit : Int,
+  n_layer : Int32,
+  n_head_kv : Int32,
+  head_dim : Int32,
+  limit : Int32,
 ) -> KVCache {
   let capacity = if limit < kv_initial_capacity {
     limit
@@ -123,7 +123,7 @@ pub fn KVCache::new(
 
 ///|
 /// Total floats held across both cache arrays, for reporting.
-pub fn KVCache::scalar_count(self : KVCache) -> Int {
+pub fn KVCache::scalar_count(self : KVCache) -> Int32 {
   self.k.length() + self.v.length()
 }
 
@@ -135,7 +135,7 @@ pub fn KVCache::scalar_count(self : KVCache) -> Int {
 /// refuses to exceed what the model can address.
 ///
 /// Returns the capacity in effect afterwards.
-pub fn KVCache::grow_to(self : KVCache, new_capacity : Int) -> Int {
+pub fn KVCache::grow_to(self : KVCache, new_capacity : Int32) -> Int32 {
   let target = if new_capacity > self.limit {
     self.limit
   } else if new_capacity < self.capacity {
@@ -310,19 +310,10 @@ pub fn Model::load(f : @gguf.GgufFile) -> Result[Model, ModelError] {
     }
     // Shape checks: anything that disagrees with the config would produce
     // wrong-but-plausible numbers rather than an obvious failure.
-    match check_layer_shapes(
-      config,
-      i,
-      attn_norm,
-      wq,
-      wk,
-      wv,
-      wo,
-      ffn_norm,
-      w_gate,
-      w_up,
-      w_down,
-    ) {
+    match
+      check_layer_shapes(
+        config, i, attn_norm, wq, wk, wv, wo, ffn_norm, w_gate, w_up, w_down,
+      ) {
       Ok(_) => ()
       Err(e) => return Err(e)
     }
@@ -343,7 +334,7 @@ pub fn Model::load(f : @gguf.GgufFile) -> Result[Model, ModelError] {
   }
   let output = if config.tied_lm_head {
     // Tied: reuse the embedding payload rather than copying 40 MB.
-    { ..token_embd, name: "token_embd.weight (tied lm head)" }
+    { ..token_embd, name: "token_embd.weight (tied lm head)", }
   } else {
     match load_matrix(f, "output.weight") {
       Ok(m) => m
@@ -357,7 +348,7 @@ pub fn Model::load(f : @gguf.GgufFile) -> Result[Model, ModelError] {
     config.context_length,
   )
   let scratch = Scratch::new(config)
-  Ok({ config, token_embd, layers, output_norm, output, cache, scratch })
+  Ok({ config, token_embd, layers, output_norm, output, cache, scratch, })
 }
 
 ///|
@@ -370,7 +361,7 @@ pub fn Model::load(f : @gguf.GgufFile) -> Result[Model, ModelError] {
 fn load_optional_vector(
   f : @gguf.GgufFile,
   name : String,
-  expected_len : Int,
+  expected_len : Int32,
 ) -> Result[Vector?, ModelError] {
   if f.tensor(name) is None {
     return Ok(None)
@@ -397,7 +388,7 @@ fn load_optional_vector(
 /// Kept as one small function so the three projection sites share the shape
 /// test; when `bias` is `None` (every llama-family model) this is a single
 /// option check per projection, not a per-element branch.
-fn add_bias_opt(dst : FixedArray[Float], bias : Vector?, len : Int) -> Unit {
+fn add_bias_opt(dst : FixedArray[Float], bias : Vector?, len : Int32) -> Unit {
   match bias {
     None => ()
     Some(b) => {
@@ -413,7 +404,7 @@ fn add_bias_opt(dst : FixedArray[Float], bias : Vector?, len : Int) -> Unit {
 /// Verify one layer's tensor shapes against the config.
 fn check_layer_shapes(
   config : ModelConfig,
-  i : Int,
+  i : Int32,
   attn_norm : Vector,
   wq : Matrix,
   wk : Matrix,
@@ -433,10 +424,26 @@ fn check_layer_shapes(
       attn_norm.data.length() == n_embd,
       "\{n_embd} elements",
     ),
-    (p + "attn_q.weight", wq.cols == n_embd && wq.rows == n_embd, "\{n_embd}x\{n_embd}"),
-    (p + "attn_k.weight", wk.cols == n_embd && wk.rows == kv_dim, "\{n_embd}x\{kv_dim}"),
-    (p + "attn_v.weight", wv.cols == n_embd && wv.rows == kv_dim, "\{n_embd}x\{kv_dim}"),
-    (p + "attn_output.weight", wo.cols == n_embd && wo.rows == n_embd, "\{n_embd}x\{n_embd}"),
+    (
+      p + "attn_q.weight",
+      wq.cols == n_embd && wq.rows == n_embd,
+      "\{n_embd}x\{n_embd}",
+    ),
+    (
+      p + "attn_k.weight",
+      wk.cols == n_embd && wk.rows == kv_dim,
+      "\{n_embd}x\{kv_dim}",
+    ),
+    (
+      p + "attn_v.weight",
+      wv.cols == n_embd && wv.rows == kv_dim,
+      "\{n_embd}x\{kv_dim}",
+    ),
+    (
+      p + "attn_output.weight",
+      wo.cols == n_embd && wo.rows == n_embd,
+      "\{n_embd}x\{n_embd}",
+    ),
     (
       p + "ffn_norm.weight",
       ffn_norm.data.length() == n_embd,
@@ -472,7 +479,7 @@ fn check_layer_shapes(
         n if n.contains("ffn_up") => "\{w_up.cols}x\{w_up.rows}"
         _ => "\{w_down.cols}x\{w_down.rows}"
       }
-      return Err(TensorShape(name=name, expected=expected, found=found))
+      return Err(TensorShape(name~, expected~, found~))
     }
   }
   Ok(())
@@ -488,7 +495,7 @@ fn rms_norm(
   x : FixedArray[Float],
   weight : FixedArray[Float],
   out : FixedArray[Float],
-  n : Int,
+  n : Int32,
   eps : Double,
 ) -> Unit {
   let mut sum_sq : Float = 0.0
@@ -538,21 +545,20 @@ fn silu(x : Float) -> Float {
 /// `n_rot` are left untouched by both variants.
 fn rope_in_place(
   x : FixedArray[Float],
-  offset : Int,
-  pos : Int,
-  head_dim : Int,
-  n_rot : Int,
+  offset : Int32,
+  pos : Int32,
+  head_dim : Int32,
+  n_rot : Int32,
   theta : Double,
   rope_type : RopeType,
 ) -> Unit {
   let n_pairs = n_rot / 2
   match rope_type {
-    NORMAL => {
+    NORMAL =>
       // Unchanged from the original llama implementation: pair (2i, 2i+1).
       for i = 0; i < n_pairs; i = i + 1 {
         // freq = theta^(-2i/head_dim)
-        let exponent = -2.0 * Double::from_int(i) /
-          Double::from_int(head_dim)
+        let exponent = -2.0 * Double::from_int(i) / Double::from_int(head_dim)
         let freq = @math.pow(theta, exponent)
         let angle = Double::from_int(pos) * freq
         let c = Float::from_double(@math.cos(angle))
@@ -562,7 +568,6 @@ fn rope_in_place(
         x[offset + 2 * i] = a * c - b * s
         x[offset + 2 * i + 1] = a * s + b * c
       }
-    }
     NEOX => {
       // Half-split pairs (i, i + n_rot/2); i runs over the first half only.
       // The frequency index is still `i`, so the first and second half of the
@@ -570,8 +575,7 @@ fn rope_in_place(
       // n_rot/2, not two copies of the same rotation.
       let half = n_pairs
       for i = 0; i < n_pairs; i = i + 1 {
-        let exponent = -2.0 * Double::from_int(i) /
-          Double::from_int(head_dim)
+        let exponent = -2.0 * Double::from_int(i) / Double::from_int(head_dim)
         let freq = @math.pow(theta, exponent)
         let angle = Double::from_int(pos) * freq
         let c = Float::from_double(@math.cos(angle))
@@ -597,10 +601,14 @@ fn rope_in_place(
 /// until it covers `pos`, capped at the model's context length, so a long
 /// prompt silently extends the cache while a prompt beyond the context still
 /// fails with `ContextOverflow`.
-pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, ModelError] {
+pub fn Model::forward(
+  self : Model,
+  token : Int32,
+  pos : Int32,
+) -> Result[Unit, ModelError] {
   let cfg = self.config
   if pos >= self.cache.limit {
-    return Err(ContextOverflow(pos=pos, max_len=self.cache.limit))
+    return Err(ContextOverflow(pos~, max_len=self.cache.limit))
   }
   if pos >= self.cache.capacity {
     // Double until the position fits. Starting from the current capacity keeps
@@ -613,7 +621,9 @@ pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, Mode
     self.cache.grow_to(target) |> ignore
   }
   if token < 0 || token >= cfg.vocab_size {
-    return Err(BadValue(key="token_id", detail="\{token} is outside the vocabulary"))
+    return Err(
+      BadValue(key="token_id", detail="\{token} is outside the vocabulary"),
+    )
   }
   let n_embd = cfg.n_embd
   let head_dim = cfg.head_dim
@@ -664,7 +674,7 @@ pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, Mode
       )
     }
     // 5. Append K/V for this position.
-    let base = (layer_idx * n_head_kv) * self.cache.capacity * head_dim
+    let base = layer_idx * n_head_kv * self.cache.capacity * head_dim
     for h = 0; h < n_head_kv; h = h + 1 {
       let kc = base + h * self.cache.capacity * head_dim + pos * head_dim
       for d = 0; d < head_dim; d = d + 1 {
@@ -744,3 +754,15 @@ pub fn Model::forward(self : Model, token : Int, pos : Int) -> Result[Unit, Mode
 pub fn Model::logits(self : Model) -> FixedArray[Float] {
   self.scratch.logits
 }
+
+///|
+pub extend Model with @debug.Debug::{to_repr}
+
+///|
+pub extend LayerWeights with @debug.Debug::{to_repr}
+
+///|
+pub extend KVCache with @debug.Debug::{to_repr}
+
+///|
+pub extend Scratch with @debug.Debug::{to_repr}

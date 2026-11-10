@@ -12,16 +12,16 @@
 
 ///|
 /// Vocabulary size: 151936.
-let qwen2_vocab_size : Int = 151936
+let qwen2_vocab_size : Int32 = 151936
 
 ///|
 /// BOS/EOS ids from the model metadata.
-let qwen2_bos : Int = 151643
-let qwen2_eos : Int = 151645
+let qwen2_bos : Int32 = 151643
+let qwen2_eos : Int32 = 151645
 
 ///|
 /// Control-token ids, which encode to single tokens before BPE.
-let qwen2_control_ids : Array[Int] = [151643, 151644, 151645, 151646, 151647, 151648, 151649, 151650, 151651, 151652, 151653, 151654, 151655, 151656, 151659, 151660, 151661, 151662, 151663, 151664]
+let qwen2_control_ids : Array[Int32] = [151643, 151644, 151645, 151646, 151647, 151648, 151649, 151650, 151651, 151652, 151653, 151654, 151655, 151656, 151659, 151660, 151661, 151662, 151663, 151664]
 
 ///|
 /// The full Qwen2 vocabulary, index = token id.
@@ -308280,7 +308280,7 @@ fn qwen2_inputs() -> Array[String] {
 
 ///|
 /// Reference token ids, flattened across qwen2_inputs.
-fn qwen2_ids_flat_chunk_0() -> Array[Int] {
+fn qwen2_ids_flat_chunk_0() -> Array[Int32] {
   [
     18, 13, 16, 19, 19, 17, 16, 17, 18, 19, 220, 19, 17, 13683, 16, 17, 18, 220, 19, 20,
     16, 10, 16, 28, 17, 11, 220, 17, 10, 17, 28, 19, 11, 220, 16, 15, 9, 16, 15, 28,
@@ -308301,15 +308301,15 @@ fn qwen2_ids_flat_chunk_0() -> Array[Int] {
 
 ///|
 /// Reference token ids, flattened across qwen2_inputs.
-fn qwen2_ids_flat() -> Array[Int] {
-  let out : Array[Int] = []
+fn qwen2_ids_flat() -> Array[Int32] {
+  let out : Array[Int32] = []
   out.append(qwen2_ids_flat_chunk_0()[:])
   out
 }
 
 ///|
 /// Length of each input's id sequence.
-fn qwen2_ids_lengths_chunk_0() -> Array[Int] {
+fn qwen2_ids_lengths_chunk_0() -> Array[Int32] {
   [
     4, 2, 4, 3, 7, 20, 10, 6, 16, 20, 6, 11, 2, 2, 5, 1, 6, 11, 4, 3,
     3, 5, 7, 4, 10, 5, 4, 8, 8, 11, 7, 8, 6, 4, 3, 6, 4, 6, 1, 1,
@@ -308319,8 +308319,8 @@ fn qwen2_ids_lengths_chunk_0() -> Array[Int] {
 
 ///|
 /// Length of each input's id sequence.
-fn qwen2_ids_lengths() -> Array[Int] {
-  let out : Array[Int] = []
+fn qwen2_ids_lengths() -> Array[Int32] {
+  let out : Array[Int32] = []
   out.append(qwen2_ids_lengths_chunk_0()[:])
   out
 }

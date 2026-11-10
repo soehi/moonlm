@@ -18,7 +18,7 @@
 /// `Byte` is unsigned in this toolchain, so the sign extension is explicit.
 /// Local to this package because the equivalent in `tensor/` takes a `Bytes`
 /// and an `Int64` offset, and adapting per row would copy the row.
-pub fn bv_sbyte(buf : Bytes, off : Int) -> Int {
+pub fn bv_sbyte(buf : Bytes, off : Int32) -> Int32 {
   let u = buf[off].to_int()
   if u >= 128 {
     u - 256
@@ -33,14 +33,14 @@ pub fn bv_sbyte(buf : Bytes, off : Int) -> Int {
 /// Mirrors `get_scale_min_k4` in ggml-quants.c: sub-blocks 0..3 take their low
 /// 6 bits from `q[j]`/`q[j+4]`; sub-blocks 4..7 take their low nibbles from
 /// `q[j+4]` and their high 2 bits from the top bits of `q[j-4]`/`q[j]`.
-fn bv_scale_min_k4(j : Int, buf : Bytes, q_off : Int) -> (Int, Int) {
+fn bv_scale_min_k4(j : Int32, buf : Bytes, q_off : Int32) -> (Int32, Int32) {
   if j < 4 {
     (buf[q_off + j].to_int() & 63, buf[q_off + j + 4].to_int() & 63)
   } else {
     let hi = buf[q_off + j + 4].to_int()
     (
-      (hi & 0xF) | ((buf[q_off + j - 4].to_int() >> 6) << 4),
-      (hi >> 4) | ((buf[q_off + j].to_int() >> 6) << 4),
+      (hi & 0xF) | (buf[q_off + j - 4].to_int() >> 6 << 4),
+      (hi >> 4) | (buf[q_off + j].to_int() >> 6 << 4),
     )
   }
 }
@@ -64,20 +64,20 @@ pub(all) struct Matrix {
   /// Element type of the payload.
   ty : @tensor.GgmlType
   /// Rows (output features).
-  rows : Int
+  rows : Int32
   /// Columns (input features); always a whole number of blocks.
-  cols : Int
+  cols : Int32
   /// Bytes per row.
-  row_bytes : Int
+  row_bytes : Int32
   /// The `Bytes` the payload lives in, shared with the rest of the model.
   data : Bytes
   /// Byte offset of this tensor's payload within `data`.
-  base : Int
+  base : Int32
 } derive(Debug)
 
 ///|
 /// Bytes of this matrix's payload.
-pub fn Matrix::payload_len(self : Matrix) -> Int {
+pub fn Matrix::payload_len(self : Matrix) -> Int32 {
   self.row_bytes * self.rows
 }
 
@@ -93,23 +93,23 @@ pub fn Matrix::from_tensor(
 ) -> Result[Matrix, ModelError] {
   let t = match f.tensor(name) {
     Some(t) => t
-    None => return Err(MissingTensor(name=name))
+    None => return Err(MissingTensor(name~))
   }
   if t.n_dims() != 2 {
     return Err(
-      TensorShape(name=name, expected="2 dimensions", found="\{t.n_dims()}"),
+      TensorShape(name~, expected="2 dimensions", found="\{t.n_dims()}"),
     )
   }
   let cols = t.dims[0].reinterpret_as_int64().to_int()
   let rows = t.dims[1].reinterpret_as_int64().to_int()
   let ty = t.ggml_type()
   if !ty.is_dequantizable() {
-    return Err(UnsupportedTensorType(name=name, type_name=ty.name))
+    return Err(UnsupportedTensorType(name~, type_name=ty.name))
   }
   if cols % ty.block_size != 0 {
     return Err(
       TensorShape(
-        name=name,
+        name~,
         expected="columns divisible by block size \{ty.block_size}",
         found="\{cols} columns",
       ),
@@ -118,33 +118,25 @@ pub fn Matrix::from_tensor(
   let row_bytes = cols / ty.block_size * ty.type_size
   let index = match f.index_of_tensor(name) {
     Some(i) => i
-    None => return Err(MissingTensor(name=name))
+    None => return Err(MissingTensor(name~))
   }
   // Locate the payload by offset into the shared file buffer rather than
   // copying it out. `tensor_bytes` would hand back an owned copy per tensor.
   let payload = match f.tensor_span(index) {
     Ok(span) => span
-    Err(e) => return Err(TensorRead(name=name, reason=e.message()))
+    Err(e) => return Err(TensorRead(name~, reason=e.message()))
   }
   let expected = row_bytes * rows
   if payload.byte_len != expected {
     return Err(
       TensorShape(
-        name=name,
+        name~,
         expected="\{expected} payload bytes",
         found="\{payload.byte_len}",
       ),
     )
   }
-  Ok({
-    name,
-    ty,
-    rows,
-    cols,
-    row_bytes,
-    data: f.buffer(),
-    base: payload.start,
-  })
+  Ok({ name, ty, rows, cols, row_bytes, data: f.buffer(), base: payload.start, })
 }
 
 ///|
@@ -163,7 +155,7 @@ pub fn load_matrix(
 /// full matrix product.
 pub fn Matrix::dequant_row(
   self : Matrix,
-  row : Int,
+  row : Int32,
   out : FixedArray[Float],
 ) -> Result[Unit, ModelError] {
   if row < 0 || row >= self.rows {
@@ -182,8 +174,7 @@ pub fn Matrix::dequant_row(
       )
       Ok(())
     }
-    _ =>
-      Err(UnsupportedTensorType(name=self.name, type_name=self.ty.name))
+    _ => Err(UnsupportedTensorType(name=self.name, type_name=self.ty.name))
   }
 }
 
@@ -192,63 +183,77 @@ pub fn Matrix::dequant_row(
 fn decode_row_into(
   ty : @tensor.GgmlType,
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   out : FixedArray[Float],
-  n_blocks : Int,
+  n_blocks : Int32,
 ) -> Unit {
   match ty.id {
-    0 => {
+    0 =>
       for b = 0; b < n_blocks; b = b + 1 {
-        out[b] = Float::reinterpret_from_uint(data.unsafe_read_uint32_le(row_off + b * 4))
+        out[b] = Float::reinterpret_from_uint(
+          data.unsafe_read_uint32_le(row_off + b * 4),
+        )
       }
-    }
-    1 => {
+    1 =>
       for b = 0; b < n_blocks; b = b + 1 {
-        out[b] = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + b * 2).to_int())
+        out[b] = @tensor.half_to_float(
+          data.unsafe_read_uint16_le(row_off + b * 2).to_int(),
+        )
       }
-    }
-    2 => {
+    2 =>
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 18
-        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base).to_int())
+        let d = @tensor.half_to_float(
+          data.unsafe_read_uint16_le(row_off + base).to_int(),
+        )
         for j = 0; j < 16; j = j + 1 {
           let byte = data[row_off + base + 2 + j].to_int()
           out[b * 32 + j] = Float::from_int((byte & 0xF) - 8) * d
           out[b * 32 + 16 + j] = Float::from_int((byte >> 4) - 8) * d
         }
       }
-    }
-    6 => {
+    6 =>
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 22
-        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base).to_int())
+        let d = @tensor.half_to_float(
+          data.unsafe_read_uint16_le(row_off + base).to_int(),
+        )
         for j = 0; j < 16; j = j + 1 {
           let byte = data[row_off + base + 6 + j].to_int()
           let xh = data[row_off + base + 2 + (j >> 3)].to_int()
           let yh = data[row_off + base + 2 + ((j + 16) >> 3)].to_int()
           out[b * 32 + j] = Float::from_int(
               ((byte & 0xF) | (((xh >> (j & 7)) & 1) << 4)) - 16,
-            ) * d
+            ) *
+            d
           out[b * 32 + 16 + j] = Float::from_int(
               ((byte >> 4) | (((yh >> (j & 7)) & 1) << 4)) - 16,
-            ) * d
+            ) *
+            d
         }
       }
-    }
-    8 => {
+    8 =>
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 34
-        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base).to_int())
+        let d = @tensor.half_to_float(
+          data.unsafe_read_uint16_le(row_off + base).to_int(),
+        )
         for j = 0; j < 32; j = j + 1 {
-          out[b * 32 + j] = Float::from_int(bv_sbyte(data, row_off + base + 2 + j)) * d
+          out[b * 32 + j] = Float::from_int(
+              bv_sbyte(data, row_off + base + 2 + j),
+            ) *
+            d
         }
       }
-    }
-    12 => {
+    12 =>
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 144
-        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base).to_int())
-        let dmin = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base + 2).to_int())
+        let d = @tensor.half_to_float(
+          data.unsafe_read_uint16_le(row_off + base).to_int(),
+        )
+        let dmin = @tensor.half_to_float(
+          data.unsafe_read_uint16_le(row_off + base + 2).to_int(),
+        )
         let sc_base = base + 4
         let q_base = base + 16
         for g = 0; g < 4; g = g + 1 {
@@ -261,15 +266,17 @@ fn decode_row_into(
           for l = 0; l < 32; l = l + 1 {
             let byte = data[row_off + q_base + g * 32 + l].to_int()
             out[b * 256 + g * 64 + l] = d0 * Float::from_int(byte & 0xF) - min0
-            out[b * 256 + g * 64 + 32 + l] = d1 * Float::from_int(byte >> 4) - min1
+            out[b * 256 + g * 64 + 32 + l] = d1 * Float::from_int(byte >> 4) -
+              min1
           }
         }
       }
-    }
-    14 => {
+    14 =>
       for b = 0; b < n_blocks; b = b + 1 {
         let base = b * 210
-        let d = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + base + 208).to_int())
+        let d = @tensor.half_to_float(
+          data.unsafe_read_uint16_le(row_off + base + 208).to_int(),
+        )
         for half = 0; half < 2; half = half + 1 {
           let ql = base + half * 64
           let qh = base + 128 + half * 32
@@ -295,7 +302,6 @@ fn decode_row_into(
           }
         }
       }
-    }
     _ => ()
   }
 }
@@ -322,41 +328,34 @@ pub fn Matrix::matvec(
   // slicing out a view: the LM head has 49152 rows, and constructing a view per
   // row costs more than the arithmetic in it.
   match ty.id {
-    0 => {
+    0 =>
       for r = 0; r < n_rows; r = r + 1 {
         y[r] = dot_f32(data, base + r * rb, x, 0, n_blocks)
       }
-    }
-    1 => {
+    1 =>
       for r = 0; r < n_rows; r = r + 1 {
         y[r] = dot_f16(data, base + r * rb, x, 0, n_blocks)
       }
-    }
-    2 => {
+    2 =>
       for r = 0; r < n_rows; r = r + 1 {
         y[r] = dot_q4_0(data, base + r * rb, x, 0, n_blocks)
       }
-    }
-    6 => {
+    6 =>
       for r = 0; r < n_rows; r = r + 1 {
         y[r] = dot_q5_0(data, base + r * rb, x, 0, n_blocks)
       }
-    }
-    8 => {
+    8 =>
       for r = 0; r < n_rows; r = r + 1 {
         y[r] = dot_q8_0(data, base + r * rb, x, 0, n_blocks)
       }
-    }
-    12 => {
+    12 =>
       for r = 0; r < n_rows; r = r + 1 {
         y[r] = dot_q4_K(data, base + r * rb, x, 0, n_blocks)
       }
-    }
-    14 => {
+    14 =>
       for r = 0; r < n_rows; r = r + 1 {
         y[r] = dot_q6_K(data, base + r * rb, x, 0, n_blocks)
       }
-    }
     _ => ()
   }
 }
@@ -369,9 +368,9 @@ pub fn Matrix::matvec(
 pub fn Matrix::matvec_at(
   self : Matrix,
   x : FixedArray[Float],
-  x_off : Int,
+  x_off : Int32,
   y : FixedArray[Float],
-  y_off : Int,
+  y_off : Int32,
 ) -> Unit {
   let n_rows = self.rows
   let cols = self.cols
@@ -398,11 +397,11 @@ pub fn Matrix::matvec_at(
 fn dot_row(
   ty : @tensor.GgmlType,
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   x : FixedArray[Float],
-  x_off : Int,
-  n_blocks : Int,
-  bs : Int,
+  x_off : Int32,
+  n_blocks : Int32,
+  bs : Int32,
 ) -> Float {
   ignore(bs)
   match ty.id {
@@ -426,15 +425,15 @@ fn dot_row(
 /// token. Declared here rather than taken from core because core's version is
 /// not exported.
 #intrinsic("%fixedarray.unsafe_get")
-fn[T] uget(a : FixedArray[T], i : Int) -> T = "%fixedarray.unsafe_get"
+fn[T] uget(a : FixedArray[T], i : Int32) -> T = "%fixedarray.unsafe_get"
 
 ///|
 /// byte value -> signed int8 value, so the inner loops need no branch.
 ///
 /// Sign-extending a byte costs a compare and a select per element, which in the
 /// LM head is 28M extra ops per token; a table lookup replaces it with a load.
-let sbyte_table : Array[Int] = {
-  let t : Array[Int] = Array::make(256, 0)
+let sbyte_table : Array[Int32] = {
+  let t : Array[Int32] = Array::make(256, 0)
   for i = 0; i < 256; i = i + 1 {
     t[i] = if i >= 128 { i - 256 } else { i }
   }
@@ -465,14 +464,16 @@ let sbyte_double_table : FixedArray[Double] = {
 /// f32 weights: a plain float dot product.
 fn dot_f32(
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   x : FixedArray[Float],
-  x_off : Int,
-  n_blocks : Int,
+  x_off : Int32,
+  n_blocks : Int32,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
-    let w = Float::reinterpret_from_uint(data.unsafe_read_uint32_le(row_off + b * 4))
+    let w = Float::reinterpret_from_uint(
+      data.unsafe_read_uint32_le(row_off + b * 4),
+    )
     acc = acc + w * uget(x, x_off + b)
   }
   acc
@@ -482,14 +483,16 @@ fn dot_f32(
 /// f16 weights: decode each half then multiply.
 fn dot_f16(
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   x : FixedArray[Float],
-  x_off : Int,
-  n_blocks : Int,
+  x_off : Int32,
+  n_blocks : Int32,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
-    let w = @tensor.half_to_float(data.unsafe_read_uint16_le(row_off + b * 2).to_int())
+    let w = @tensor.half_to_float(
+      data.unsafe_read_uint16_le(row_off + b * 2).to_int(),
+    )
     acc = acc + w * uget(x, x_off + b)
   }
   acc
@@ -503,10 +506,10 @@ fn dot_f16(
 /// closer to the reference arithmetic than scaling per element.
 fn dot_q4_0(
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   x : FixedArray[Float],
-  x_off : Int,
-  n_blocks : Int,
+  x_off : Int32,
+  n_blocks : Int32,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
@@ -537,10 +540,10 @@ fn dot_q4_0(
 /// here as one u32 with word shifts.
 fn dot_q5_0(
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   x : FixedArray[Float],
-  x_off : Int,
-  n_blocks : Int,
+  x_off : Int32,
+  n_blocks : Int32,
 ) -> Float {
   let mut acc : Double = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
@@ -564,7 +567,7 @@ fn dot_q5_0(
       s2 = s2 + q2 * uget(x, xb + j + 1).to_double()
       s3 = s3 + q3 * uget(x, xb + 17 + j).to_double()
     }
-    acc = acc + d * ((s0 + s1) + (s2 + s3))
+    acc = acc + d * (s0 + s1 + (s2 + s3))
   }
   Float::from_double(acc)
 }
@@ -582,10 +585,10 @@ fn dot_q5_0(
 /// rounding detail rather than a change in what is computed.
 fn dot_q8_0(
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   x : FixedArray[Float],
-  x_off : Int,
-  n_blocks : Int,
+  x_off : Int32,
+  n_blocks : Int32,
 ) -> Float {
   let mut acc : Double = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
@@ -612,7 +615,7 @@ fn dot_q8_0(
         uget(sbyte_double_table, data.unsafe_get(base + 5 + j).to_int()) *
         uget(x, xb + j + 3).to_double()
     }
-    acc = acc + d * ((s0 + s1) + (s2 + s3))
+    acc = acc + d * (s0 + s1 + (s2 + s3))
   }
   Float::from_double(acc)
 }
@@ -624,10 +627,10 @@ fn dot_q8_0(
 /// that sub-block's inputs: computing the sum once avoids a per-element add.
 fn dot_q4_K(
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   x : FixedArray[Float],
-  x_off : Int,
-  n_blocks : Int,
+  x_off : Int32,
+  n_blocks : Int32,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
@@ -671,15 +674,17 @@ fn dot_q4_K(
 /// q6_K: 256-element super-blocks, 16-element sub-block int8 scales.
 fn dot_q6_K(
   data : Bytes,
-  row_off : Int,
+  row_off : Int32,
   x : FixedArray[Float],
-  x_off : Int,
-  n_blocks : Int,
+  x_off : Int32,
+  n_blocks : Int32,
 ) -> Float {
   let mut acc : Float = 0.0
   for b = 0; b < n_blocks; b = b + 1 {
     let base = row_off + b * 210
-    let d = @tensor.half_to_float(data.unsafe_read_uint16_le(base + 208).to_int())
+    let d = @tensor.half_to_float(
+      data.unsafe_read_uint16_le(base + 208).to_int(),
+    )
     let y0 = x_off + b * 256
     for half = 0; half < 2; half = half + 1 {
       let ql = base + half * 64
@@ -709,7 +714,9 @@ fn dot_q6_K(
         let qhv = data[qh + l].to_int()
         let ql_lo = data[ql + l].to_int()
         let ql_hi = data[ql + 32 + l].to_int()
-        s0 = s0 + a0 * Float::from_int(((ql_lo & 0xF) | ((qhv & 3) << 4)) - 32) *
+        s0 = s0 +
+          a0 *
+          Float::from_int(((ql_lo & 0xF) | ((qhv & 3) << 4)) - 32) *
           uget(x, yb + l)
         s1 = s1 +
           a1 *
@@ -724,7 +731,7 @@ fn dot_q6_K(
           Float::from_int(((ql_hi >> 4) | (((qhv >> 6) & 3) << 4)) - 32) *
           uget(x, yb + l + 96)
       }
-      acc = acc + d * ((s0 + s1) + (s2 + s3))
+      acc = acc + d * (s0 + s1 + (s2 + s3))
     }
   }
   acc
@@ -742,39 +749,38 @@ pub(all) struct Vector {
 ///
 /// Norm weights are small (one float per hidden dimension), so they are
 /// dequantized once at load time rather than per token.
-pub fn load_vector(f : @gguf.GgufFile, name : String) -> Result[Vector, ModelError] {
+pub fn load_vector(
+  f : @gguf.GgufFile,
+  name : String,
+) -> Result[Vector, ModelError] {
   let t = match f.tensor(name) {
     Some(t) => t
-    None => return Err(MissingTensor(name=name))
+    None => return Err(MissingTensor(name~))
   }
   if t.n_dims() != 1 {
     return Err(
-      TensorShape(name=name, expected="1 dimension", found="\{t.n_dims()}"),
+      TensorShape(name~, expected="1 dimension", found="\{t.n_dims()}"),
     )
   }
   let n = t.n_elems.to_int()
   let index = match f.index_of_tensor(name) {
     Some(i) => i
-    None => return Err(MissingTensor(name=name))
+    None => return Err(MissingTensor(name~))
   }
   let ty = t.ggml_type()
   if !ty.is_dequantizable() {
-    return Err(UnsupportedTensorType(name=name, type_name=ty.name))
+    return Err(UnsupportedTensorType(name~, type_name=ty.name))
   }
   let values = match f.dequant_tensor(index) {
     Ok(v) => v
-    Err(e) => return Err(TensorRead(name=name, reason=e.message()))
+    Err(e) => return Err(TensorRead(name~, reason=e.message()))
   }
   if values.length() != n {
     return Err(
-      TensorShape(
-        name=name,
-        expected="\{n} elements",
-        found="\{values.length()}",
-      ),
+      TensorShape(name~, expected="\{n} elements", found="\{values.length()}"),
     )
   }
-  Ok({ name, data: FixedArray::from_array(values[:]) })
+  Ok({ name, data: FixedArray::from_array(values[:]), })
 }
 
 ///|
@@ -811,58 +817,57 @@ pub fn matvec_pair(
   let base_b = b.base
   let rb = a.row_bytes
   match a.ty.id {
-    8 => {
+    8 =>
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
         y_a[r] = dot_q8_0(data_a, base_a + off, x, 0, n_blocks)
         y_b[r] = dot_q8_0(data_b, base_b + off, x, 0, n_blocks)
       }
-    }
-    2 => {
+    2 =>
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
         y_a[r] = dot_q4_0(data_a, base_a + off, x, 0, n_blocks)
         y_b[r] = dot_q4_0(data_b, base_b + off, x, 0, n_blocks)
       }
-    }
-    6 => {
+    6 =>
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
         y_a[r] = dot_q5_0(data_a, base_a + off, x, 0, n_blocks)
         y_b[r] = dot_q5_0(data_b, base_b + off, x, 0, n_blocks)
       }
-    }
-    0 => {
+    0 =>
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
         y_a[r] = dot_f32(data_a, base_a + off, x, 0, n_blocks)
         y_b[r] = dot_f32(data_b, base_b + off, x, 0, n_blocks)
       }
-    }
-    1 => {
+    1 =>
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
         y_a[r] = dot_f16(data_a, base_a + off, x, 0, n_blocks)
         y_b[r] = dot_f16(data_b, base_b + off, x, 0, n_blocks)
       }
-    }
-    12 => {
+    12 =>
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
         y_a[r] = dot_q4_K(data_a, base_a + off, x, 0, n_blocks)
         y_b[r] = dot_q4_K(data_b, base_b + off, x, 0, n_blocks)
       }
-    }
-    14 => {
+    14 =>
       for r = 0; r < n_rows; r = r + 1 {
         let off = r * rb
         y_a[r] = dot_q6_K(data_a, base_a + off, x, 0, n_blocks)
         y_b[r] = dot_q6_K(data_b, base_b + off, x, 0, n_blocks)
       }
-    }
     _ => {
       a.matvec(x, y_a)
       b.matvec(x, y_b)
     }
   }
 }
+
+///|
+pub extend Matrix with @debug.Debug::{to_repr}
+
+///|
+pub extend Vector with @debug.Debug::{to_repr}

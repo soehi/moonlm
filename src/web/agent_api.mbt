@@ -32,22 +32,18 @@
 /// real sandbox.
 let demo_files : Array[(String, String)] = [
   (
-    "notes.md",
-    "# Demo notes\n\nThis file lives in the page, not on disk. The agent loop, the JSON parser and the schema validator are the same code the CLI runs; only the tool set differs.",
+    "notes.md", "# Demo notes\n\nThis file lives in the page, not on disk. The agent loop, the JSON parser and the schema validator are the same code the CLI runs; only the tool set differs.",
   ),
-  (
-    "numbers.txt",
-    "alpha 12\nbeta 34\ngamma 56\n",
-  ),
+  ("numbers.txt", "alpha 12\nbeta 34\ngamma 56\n"),
 ]
 
 ///|
 /// Register the browser tool set: the real `calc` plus the demo file tools.
 fn demo_registry() -> @agent.ToolRegistry {
   let registry = @agent.ToolRegistry::new()
-  registry.add(@tools.CalcTool::{}) |> ignore
-  registry.add(DemoListTool::{}) |> ignore
-  registry.add(DemoReadTool::{}) |> ignore
+  registry.add(@tools.CalcTool::{ }) |> ignore
+  registry.add(DemoListTool::{ }) |> ignore
+  registry.add(DemoReadTool::{ }) |> ignore
   registry
 }
 
@@ -62,9 +58,7 @@ pub impl @agent.Tool for DemoListTool with fn name(self : DemoListTool) -> Strin
 }
 
 ///|
-pub impl @agent.Tool for DemoListTool with fn description(
-  self : DemoListTool,
-) -> String {
+pub impl @agent.Tool for DemoListTool with fn description(self : DemoListTool) -> String {
   let _ = self
   "List the names of the browser demo files. This is NOT the filesystem."
 }
@@ -85,10 +79,12 @@ pub impl @agent.Tool for DemoListTool with fn invoke(
 ) -> Result[@agent.ToolOutput, @agent.ToolError] {
   let _ = (self, args)
   Ok({
-    text: demo_files.map(fn(pair) {
+    text: demo_files
+    .map(fn(pair) {
       let (name, _) = pair
       name
-    }).join("\n"),
+    })
+    .join("\n"),
     truncated: false,
     provides_evidence: false,
   })
@@ -105,9 +101,7 @@ pub impl @agent.Tool for DemoReadTool with fn name(self : DemoReadTool) -> Strin
 }
 
 ///|
-pub impl @agent.Tool for DemoReadTool with fn description(
-  self : DemoReadTool,
-) -> String {
+pub impl @agent.Tool for DemoReadTool with fn description(self : DemoReadTool) -> String {
   let _ = self
   "Read one browser demo file by exact name, e.g. \"notes.md\". This is NOT the filesystem."
 }
@@ -144,7 +138,7 @@ pub impl @agent.Tool for DemoReadTool with fn invoke(
   for pair in demo_files {
     let (file_name, content) = pair
     if file_name == name {
-      return Ok({ text: content, truncated: false, provides_evidence: true })
+      return Ok({ text: content, truncated: false, provides_evidence: true, })
     }
   }
   // A miss is an observation, not a crash: the model can call demo_list.
@@ -172,9 +166,9 @@ let last_trace : Array[String] = []
 /// failed before producing a step, with the reason in `moonlm_last_error()`.
 #export_name("moonlm_agent_run")
 pub fn moonlm_agent_run(
-  handle : Int,
+  handle : Int32,
   task : String,
-  max_steps : Int,
+  max_steps : Int32,
 ) -> FixedArray[String] {
   let engine = match engine_of(handle) {
     Err(e) => {
@@ -221,7 +215,7 @@ pub fn moonlm_agent_run(
 ///|
 /// Why the last `moonlm_agent_run` stopped, for the page to display.
 #export_name("moonlm_agent_stop")
-pub fn moonlm_agent_stop(handle : Int, task : String) -> String {
+pub fn moonlm_agent_stop(handle : Int32, task : String) -> String {
   // Re-running to report the stop reason would double the cost of a slow
   // browser generation, so the reason is derived from the trace the caller
   // already has: an empty answer means the loop stopped on a budget.
@@ -244,4 +238,26 @@ pub fn moonlm_agent_stop(handle : Int, task : String) -> String {
 #export_name("moonlm_agent_tools")
 pub fn moonlm_agent_tools() -> FixedArray[String] {
   FixedArray::from_array(demo_registry().names())
+}
+
+///|
+pub extend DemoListTool with @debug.Debug::{to_repr}
+
+///|
+pub extend DemoListTool with @agent.Tool::{
+  name,
+  invoke,
+  parameters_schema,
+  description,
+}
+
+///|
+pub extend DemoReadTool with @debug.Debug::{to_repr}
+
+///|
+pub extend DemoReadTool with @agent.Tool::{
+  name,
+  invoke,
+  parameters_schema,
+  description,
 }

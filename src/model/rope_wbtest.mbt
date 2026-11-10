@@ -5,7 +5,7 @@
 // and prove the GGUF metadata path selects the right one.
 
 ///|
-fn rope_fixture(rope_type : RopeType, n_rot : Int) -> FixedArray[Float] {
+fn rope_fixture(rope_type : RopeType, n_rot : Int32) -> FixedArray[Float] {
   let x : FixedArray[Float] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
   rope_in_place(x, 0, 1, 8, n_rot, 10000.0, rope_type)
   x
@@ -54,8 +54,16 @@ test "NORMAL leaves dimensions past n_rot untouched" {
   let x = rope_fixture(NORMAL, 4)
   assert_close(x[0], 0.5403023058681398 - 2.0 * 0.8414709848078965, "x[0]")
   assert_close(x[1], 0.8414709848078965 + 2.0 * 0.5403023058681398, "x[1]")
-  assert_close(x[2], 3.0 * 0.9950041652780258 - 4.0 * 0.09983341664682815, "x[2]")
-  assert_close(x[3], 3.0 * 0.09983341664682815 + 4.0 * 0.9950041652780258, "x[3]")
+  assert_close(
+    x[2],
+    3.0 * 0.9950041652780258 - 4.0 * 0.09983341664682815,
+    "x[2]",
+  )
+  assert_close(
+    x[3],
+    3.0 * 0.09983341664682815 + 4.0 * 0.9950041652780258,
+    "x[3]",
+  )
   assert_eq(x[4], 5.0)
   assert_eq(x[5], 6.0)
   assert_eq(x[6], 7.0)
@@ -70,8 +78,16 @@ test "NEOX leaves dimensions past n_rot untouched" {
   let x = rope_fixture(NEOX, 4)
   assert_close(x[0], 0.5403023058681398 - 3.0 * 0.8414709848078965, "x[0]")
   assert_close(x[2], 0.8414709848078965 + 3.0 * 0.5403023058681398, "x[2]")
-  assert_close(x[1], 2.0 * 0.9950041652780258 - 4.0 * 0.09983341664682815, "x[1]")
-  assert_close(x[3], 2.0 * 0.09983341664682815 + 4.0 * 0.9950041652780258, "x[3]")
+  assert_close(
+    x[1],
+    2.0 * 0.9950041652780258 - 4.0 * 0.09983341664682815,
+    "x[1]",
+  )
+  assert_close(
+    x[3],
+    2.0 * 0.09983341664682815 + 4.0 * 0.9950041652780258,
+    "x[3]",
+  )
   assert_eq(x[4], 5.0)
   assert_eq(x[5], 6.0)
   assert_eq(x[6], 7.0)
@@ -92,9 +108,7 @@ test "NORMAL and NEOX differ once the head is wider than one pair" {
 /// A minimal GGUF metadata/tensor map sufficient for `ModelConfig::from_gguf`.
 /// No payload bytes are needed: the config path only reads the tensor
 /// directory, so an empty buffer is fine.
-fn config_gguf(
-  extra : Array[(String, @gguf.MetaValue)],
-) -> @gguf.GgufFile {
+fn config_gguf(extra : Array[(String, @gguf.MetaValue)]) -> @gguf.GgufFile {
   let metadata : Array[(String, @gguf.MetaValue)] = [
     ("general.architecture", @gguf.Str("qwen2")),
     ("qwen2.embedding_length", @gguf.U32(8U)),
@@ -188,12 +202,13 @@ test "Qwen2 per-layer neox key selects NEOX" {
 
 ///|
 test "layers that disagree on the RoPE variant are rejected" {
-  match ModelConfig::from_gguf(
-    config_gguf([
-      ("qwen2.rope.0.type", @gguf.Str("normal")),
-      ("qwen2.rope.1.type", @gguf.Str("neox")),
-    ]),
-  ) {
+  match
+    ModelConfig::from_gguf(
+      config_gguf([
+        ("qwen2.rope.0.type", @gguf.Str("normal")),
+        ("qwen2.rope.1.type", @gguf.Str("neox")),
+      ]),
+    ) {
     Ok(_) => fail("expected BadValue for disagreeing per-layer RoPE variants")
     Err(BadValue(key~, detail~)) => {
       assert_eq(key, "qwen2.rope.1.type")
@@ -228,10 +243,14 @@ test "per-layer key wins over the shared key" {
 
 ///|
 test "an unknown RoPE variant is rejected, not silently defaulted" {
-  match ModelConfig::from_gguf(
-    config_gguf([("qwen2.rope.1.type", @gguf.Str("yarn"))]),
-  ) {
-    Ok(_) => fail("expected BadValue for an unknown RoPE variant, but the config loaded")
+  match
+    ModelConfig::from_gguf(
+      config_gguf([("qwen2.rope.1.type", @gguf.Str("yarn"))]),
+    ) {
+    Ok(_) =>
+      fail(
+        "expected BadValue for an unknown RoPE variant, but the config loaded",
+      )
     Err(BadValue(key~, detail~)) => {
       assert_eq(key, "qwen2.rope.1.type")
       assert_true(detail.contains("yarn"))

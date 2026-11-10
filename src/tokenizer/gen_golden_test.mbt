@@ -13,12 +13,12 @@
 
 ///|
 /// Vocabulary size: 49152.
-let golden_vocab_size : Int = 49152
+let golden_vocab_size : Int32 = 49152
 
 ///|
 /// BOS/EOS ids from the model metadata.
-let golden_bos : Int = 1
-let golden_eos : Int = 2
+let golden_bos : Int32 = 1
+let golden_eos : Int32 = 2
 
 ///|
 /// The full SmolLM2 vocabulary, index = token id.
@@ -99712,7 +99712,7 @@ fn golden_inputs() -> Array[String] {
 
 ///|
 /// Reference token ids, flattened across golden_inputs.
-fn golden_ids_flat_chunk_0() -> Array[Int] {
+fn golden_ids_flat_chunk_0() -> Array[Int32] {
   [
     19556, 28, 905, 17, 504, 2365, 6354, 16438, 27003, 690, 260, 23790, 2767, 30, 18645, 250, 48392, 138, 12831, 7906,
     240, 178, 239, 230, 8083, 219, 28589, 29184, 42179, 14901, 177, 132, 132, 16357, 226, 29184, 40993, 33, 34, 35,
@@ -99736,15 +99736,15 @@ fn golden_ids_flat_chunk_0() -> Array[Int] {
 
 ///|
 /// Reference token ids, flattened across golden_inputs.
-fn golden_ids_flat() -> Array[Int] {
-  let out : Array[Int] = []
+fn golden_ids_flat() -> Array[Int32] {
+  let out : Array[Int32] = []
   out.append(golden_ids_flat_chunk_0()[:])
   out
 }
 
 ///|
 /// Length of each input's id sequence, aligned with golden_inputs.
-fn golden_ids_lengths_chunk_0() -> Array[Int] {
+fn golden_ids_lengths_chunk_0() -> Array[Int32] {
   [
     4, 10, 12, 14, 12, 13, 7, 8, 18, 21, 13, 11, 10, 1, 1, 1, 1, 5, 5, 50,
     5, 20, 11, 7, 19, 17, 11, 6, 9, 15,
@@ -99753,8 +99753,8 @@ fn golden_ids_lengths_chunk_0() -> Array[Int] {
 
 ///|
 /// Length of each input's id sequence, aligned with golden_inputs.
-fn golden_ids_lengths() -> Array[Int] {
-  let out : Array[Int] = []
+fn golden_ids_lengths() -> Array[Int32] {
+  let out : Array[Int32] = []
   out.append(golden_ids_lengths_chunk_0()[:])
   out
 }

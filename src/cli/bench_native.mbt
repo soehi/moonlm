@@ -9,7 +9,7 @@
 ///
 /// Reported per-stage so a bottleneck is attributable: the LM head and the FFN
 /// are the two stages that dominate a 135M model, and they need different fixes.
-pub fn profile_decode(path : String, iters : Int) -> Int {
+pub fn profile_decode(path : String, iters : Int32) -> Int32 {
   let buf = match read_file(path) {
     Ok(b) => b
     Err(e) => {
@@ -84,7 +84,9 @@ pub fn profile_decode(path : String, iters : Int) -> Int {
   )
   let per_token = t_full / Double::from_int(iters)
   if per_token > 0.0 {
-    println("=> \{(1.0 / per_token).to_string()} tok/s implied by the forward alone")
+    println(
+      "=> \{(1.0 / per_token).to_string()} tok/s implied by the forward alone",
+    )
   }
   0
 }
@@ -100,7 +102,7 @@ pub fn profile_decode(path : String, iters : Int) -> Int {
 /// The prompt is taken as ids rather than text on purpose — it removes the
 /// tokenizer from the experiment, so a mismatch can only come from the forward
 /// pass.
-pub fn dump_logits(path : String, ids : Array[Int], top : Int) -> Int {
+pub fn dump_logits(path : String, ids : Array[Int32], top : Int32) -> Int32 {
   let buf = match read_file(path) {
     Ok(b) => b
     Err(e) => {
@@ -138,9 +140,13 @@ pub fn dump_logits(path : String, ids : Array[Int], top : Int) -> Int {
 
 ///|
 /// Print the `top` highest logits with their ids and values, highest first.
-fn emit_top_logits(logits : FixedArray[Float], top : Int, pos : Int) -> Unit {
+fn emit_top_logits(
+  logits : FixedArray[Float],
+  top : Int32,
+  pos : Int32,
+) -> Unit {
   let n = logits.length()
-  let idx : Array[Int] = []
+  let idx : Array[Int32] = []
   for i = 0; i < n; i = i + 1 {
     idx.push(i)
   }

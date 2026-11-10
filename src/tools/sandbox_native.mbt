@@ -38,7 +38,7 @@ pub fn Sandbox::open(workspace : String) -> Result[Sandbox, String] {
     Ok(false) => return Err("sandbox: workspace is not a directory: \{root}")
     Err(e) => return Err("sandbox: \{e}")
   }
-  Ok({ root, fold_case: host_is_windows() })
+  Ok({ root, fold_case: host_is_windows(), })
 }
 
 ///|
@@ -46,11 +46,11 @@ pub fn Sandbox::open(workspace : String) -> Result[Sandbox, String] {
 /// defined on the ASCII letters plus the invariant that non-ASCII names keep
 /// their own case.
 fn fold_ascii(s : String) -> String {
-  let sb = StringBuilder::new()
+  let sb = StringBuilder()
   for ch in s {
     let v = ch.to_int()
     if v >= 0x41 && v <= 0x5A {
-      sb.write_char(Int::unsafe_to_char(v + 0x20))
+      sb.write_char(Int32::unsafe_to_char(v + 0x20))
     } else {
       sb.write_char(ch)
     }
@@ -113,10 +113,7 @@ fn check_relative_shape(rel : String) -> Result[Unit, String] {
 ///
 /// Fails when the path is empty, absolute, contains `..`, does not exist, or
 /// resolves (through a symlink or junction) to somewhere outside the workspace.
-pub fn Sandbox::resolve(
-  self : Sandbox,
-  rel : String,
-) -> Result[String, String] {
+pub fn Sandbox::resolve(self : Sandbox, rel : String) -> Result[String, String] {
   match check_relative_shape(rel) {
     Ok(_) => ()
     Err(e) => return Err(e)
@@ -137,3 +134,9 @@ pub fn Sandbox::resolve(
   }
   Ok(canonical)
 }
+
+///|
+pub extend Sandbox with @debug.Debug::{to_repr}
+
+///|
+pub extend Sandbox with Eq::{not_equal, equal}

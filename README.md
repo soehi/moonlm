@@ -195,7 +195,7 @@ grep），多步"列目录 → 读文件 → 总结"0/2 完成——模型拿到
 
 ## 构建与测试
 
-需要 [MoonBit 工具链](https://www.moonbitlang.com/download/)（`moon` 0.1.20260819 或更新）。
+需要 [MoonBit 工具链](https://www.moonbitlang.com/download/)（`moonc >= 0.10.19`；本次验证使用 `moon 0.1.20261029` / `moonc v0.10.19`）。编译器版本与 `moon` 工具版本是两个不同编号。
 
 ```bash
 moon check   --target native    # 双 target 静态检查

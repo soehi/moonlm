@@ -46,7 +46,7 @@ fn validate_at(
         Some(t) =>
           match check_type(t, value) {
             Ok(_) => ()
-            Err(msg) => return Err({ path, message: msg })
+            Err(msg) => return Err({ path, message: msg, })
           }
         None => ()
       }
@@ -59,7 +59,8 @@ fn validate_at(
               message: "must be one of \{enum_names(allowed)}",
             })
           }
-        Some(_) => return Err({ path, message: "schema error: enum must be an array" })
+        Some(_) =>
+          return Err({ path, message: "schema error: enum must be an array", })
         None => ()
       }
       // Validation at the value's own kind.
@@ -76,15 +77,27 @@ fn validate_at(
                         message: "missing required field \"\{key}\"",
                       })
                     }
-                  _ => return Err({ path, message: "schema error: required must be strings" })
+                  _ =>
+                    return Err({
+                      path,
+                      message: "schema error: required must be strings",
+                    })
                 }
               }
-            Some(_) => return Err({ path, message: "schema error: required must be an array" })
+            Some(_) =>
+              return Err({
+                path,
+                message: "schema error: required must be an array",
+              })
             None => ()
           }
           let declared = match props.get("properties") {
             Some(Object(p)) => Some(p)
-            Some(_) => return Err({ path, message: "schema error: properties must be an object" })
+            Some(_) =>
+              return Err({
+                path,
+                message: "schema error: properties must be an object",
+              })
             None => None
           }
           let allow_extra = match props.get("additionalProperties") {
@@ -96,25 +109,21 @@ fn validate_at(
             match declared {
               Some(d) =>
                 match d.get(key) {
-                  Some(sub) => {
+                  Some(sub) =>
                     match validate_at(sub, v, child_path) {
                       Ok(_) => ()
                       Err(e) => return Err(e)
                     }
-                  }
                   None =>
                     if !allow_extra {
-                      return Err({
-                        path: child_path,
-                        message: "unknown field",
-                      })
+                      return Err({ path: child_path, message: "unknown field", })
                     }
                 }
               None => ()
             }
           }
         }
-        Array(items) => {
+        Array(items) =>
           match props.get("items") {
             Some(sub) =>
               for i, item in items {
@@ -125,19 +134,24 @@ fn validate_at(
               }
             None => ()
           }
-        }
         String(s) => {
           match props.get("minLength") {
             Some(Number(min, ..)) =>
               if Double::from_int(s.length()) < min {
-                return Err({ path, message: "must be at least \{min} characters" })
+                return Err({
+                  path,
+                  message: "must be at least \{min} characters",
+                })
               }
             _ => ()
           }
           match props.get("maxLength") {
             Some(Number(max, ..)) =>
               if Double::from_int(s.length()) > max {
-                return Err({ path, message: "must be at most \{max} characters" })
+                return Err({
+                  path,
+                  message: "must be at most \{max} characters",
+                })
               }
             _ => ()
           }
@@ -146,14 +160,14 @@ fn validate_at(
           match props.get("minimum") {
             Some(Number(min, ..)) =>
               if n < min {
-                return Err({ path, message: "must be >= \{min}" })
+                return Err({ path, message: "must be >= \{min}", })
               }
             _ => ()
           }
           match props.get("maximum") {
             Some(Number(max, ..)) =>
               if n > max {
-                return Err({ path, message: "must be <= \{max}" })
+                return Err({ path, message: "must be <= \{max}", })
               }
             _ => ()
           }
@@ -162,7 +176,7 @@ fn validate_at(
       }
       Ok(())
     }
-    _ => Err({ path, message: "schema error: schema must be an object" })
+    _ => Err({ path, message: "schema error: schema must be an object", })
   }
 }
 
@@ -179,10 +193,7 @@ fn check_type(t : Json, value : Json) -> Result[Unit, String] {
     Array(names) => {
       for n in names {
         match n {
-          String(name) =>
-            if matches_type(name, value) {
-              return Ok(())
-            }
+          String(name) => if matches_type(name, value) { return Ok(()) }
           _ => return Err("schema error: type array must contain strings")
         }
       }
@@ -230,3 +241,9 @@ fn join_path(path : String, key : String) -> String {
     "\{path}.\{key}"
   }
 }
+
+///|
+pub extend SchemaError with Eq::{not_equal, equal}
+
+///|
+pub extend SchemaError with @debug.Debug::{to_repr}

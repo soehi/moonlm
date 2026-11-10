@@ -45,8 +45,8 @@ def build_ranges(pred, lo: int, hi: int) -> list[tuple[int, int]]:
 
 def emit(name: str, ranges, doc: str) -> str:
     """Emit a flat array: lo0, hi0, lo1, hi1, ... MoonBit has no tuple
-    literals, and a flat Int array binary-searches without allocation."""
-    lines = ["///|", f"/// {doc}", f"let {name} : Array[Int] = ["]
+    literals, and a flat Int32 array binary-searches without allocation."""
+    lines = ["///|", f"/// {doc}", f"let {name} : Array[Int32] = ["]
     flat = []
     for lo, hi in ranges:
         flat.extend([f"0x{lo:X}", f"0x{hi:X}"])
@@ -100,7 +100,7 @@ def main() -> None:
         "/// GPT-2 byte encoder: byte value -> unicode codepoint.",
         "/// Bytes 33-126, 161-172, 174-255 map to themselves; the remaining 68",
         "/// map to U+0100.. in order. Index = byte value.",
-        "let byte_encoder_table : Array[Int] = [",
+        "let byte_encoder_table : Array[Int32] = [",
     ]
     row = [str(m[b]) for b in range(256)]
     for i in range(0, 256, 16):

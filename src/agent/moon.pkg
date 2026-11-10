@@ -6,6 +6,7 @@
 // `native` and `wasm-gc`.
 
 import {
+  "moonbitlang/core/debug",
   "moonbitlang/core/json",
   "soehi/moonlm/engine",
   "soehi/moonlm/sampler",

@@ -29,28 +29,28 @@ pub(all) struct ModelConfig {
   /// `general.architecture` verbatim, e.g. "llama".
   architecture : String
   /// Vocabulary size, from the embedding tensor's row count.
-  vocab_size : Int
+  vocab_size : Int32
   /// Hidden dimension.
-  n_embd : Int
+  n_embd : Int32
   /// Number of transformer blocks.
-  n_layer : Int
+  n_layer : Int32
   /// SwiGLU intermediate dimension.
-  n_ff : Int
+  n_ff : Int32
   /// Query heads.
-  n_head : Int
+  n_head : Int32
   /// Key/value heads; equal to `n_head` when the model does not use GQA.
-  n_head_kv : Int
+  n_head_kv : Int32
   /// Per-head dimension.
-  head_dim : Int
+  head_dim : Int32
   /// Maximum sequence length the KV cache is sized for.
-  context_length : Int
+  context_length : Int32
   /// `attention.layer_norm_rms_epsilon`.
   rms_eps : Double
   /// `rope.freq_base` (rope_theta).
   rope_theta : Double
   /// Number of hidden dimensions RoPE rotates; equals `head_dim` unless the
   /// model sets `rope.dimension_count` (partial rotation).
-  n_rot : Int
+  n_rot : Int32
   /// Pairing convention for RoPE. Absent metadata means `NORMAL`, which keeps
   /// llama / SmolLM2 numbers unchanged; Qwen2 files declare `NEOX`.
   rope_type : RopeType
@@ -74,7 +74,7 @@ pub(all) suberror ModelError {
   /// A prompt produced no tokens to evaluate.
   EmptyPrompt
   /// A position exceeded the KV cache capacity.
-  ContextOverflow(pos~ : Int, max_len~ : Int)
+  ContextOverflow(pos~ : Int32, max_len~ : Int32)
   /// A tensor payload could not be located or decoded.
   TensorRead(name~ : String, reason~ : String)
   /// The tokenizer could not be loaded or used.
@@ -110,16 +110,16 @@ pub impl Show for ModelError with fn to_string(self : ModelError) {
 
 ///|
 /// Read a required integer metadata value, tolerating either type width.
-fn req_int(f : @gguf.GgufFile, key : String) -> Result[Int, ModelError] {
+fn req_int(f : @gguf.GgufFile, key : String) -> Result[Int32, ModelError] {
   match f.get_int(key) {
     Some(v) => Ok(v.to_int())
-    None => Err(MissingKey(key=key))
+    None => Err(MissingKey(key~))
   }
 }
 
 ///|
 /// Read an optional integer metadata value with a fallback.
-fn opt_int(f : @gguf.GgufFile, key : String, default : Int) -> Int {
+fn opt_int(f : @gguf.GgufFile, key : String, default : Int32) -> Int32 {
   match f.get_int(key) {
     Some(v) => v.to_int()
     None => default
@@ -178,7 +178,7 @@ fn rope_type_default(arch : String) -> RopeType {
 fn read_rope_type(
   f : @gguf.GgufFile,
   arch : String,
-  n_layer : Int,
+  n_layer : Int32,
 ) -> Result[RopeType, ModelError] {
   let mut found : RopeType? = None
   let mut found_key = ""
@@ -290,10 +290,12 @@ pub fn ModelConfig::from_gguf(
   //   - RoPE scaling (`rope.scaling.*`, e.g. YaRN / long-context variants)
   //     would need an angle rescale that this build does not implement;
   //     `rope.freq_base` alone is honoured.
-  let known = arch == "llama" || arch == "smollm" || arch == "smollm2" ||
+  let known = arch == "llama" ||
+    arch == "smollm" ||
+    arch == "smollm2" ||
     arch == "qwen2"
   if !known {
-    return Err(UnsupportedArchitecture(arch=arch))
+    return Err(UnsupportedArchitecture(arch~))
   }
   let p = "\{arch}."
   let n_embd = match req_int(f, p + "embedding_length") {
@@ -404,12 +406,33 @@ pub fn ModelConfig::from_gguf(
 
 ///|
 /// Number of query heads sharing each key/value head.
-pub fn ModelConfig::heads_per_kv(self : ModelConfig) -> Int {
+pub fn ModelConfig::heads_per_kv(self : ModelConfig) -> Int32 {
   self.n_head / self.n_head_kv
 }
 
 ///|
 /// Rows in each attention projection.
-pub fn ModelConfig::kv_dim(self : ModelConfig) -> Int {
+pub fn ModelConfig::kv_dim(self : ModelConfig) -> Int32 {
   self.n_head_kv * self.head_dim
 }
+
+///|
+pub extend RopeType with Eq::{not_equal, equal}
+
+///|
+pub extend RopeType with @debug.Debug::{to_repr}
+
+///|
+pub extend ModelConfig with Eq::{not_equal, equal}
+
+///|
+pub extend ModelConfig with @debug.Debug::{to_repr}
+
+///|
+pub extend ModelError with Eq::{not_equal, equal}
+
+///|
+pub extend ModelError with @debug.Debug::{to_repr}
+
+///|
+pub extend ModelError with Show::{to_string, output}

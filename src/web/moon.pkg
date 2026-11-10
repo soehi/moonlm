@@ -19,6 +19,7 @@
 // and wasm-gc; only the JavaScript boundary is `js`-only. See docs/browser.md.
 
 import {
+  "moonbitlang/core/debug",
   "soehi/moonlm/agent",
   "soehi/moonlm/engine",
   "soehi/moonlm/sampler",

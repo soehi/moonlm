@@ -8,7 +8,7 @@
 
 ///|
 /// 1 on Windows, 0 elsewhere; decides path-prefix case folding.
-extern "C" fn ml_is_windows() -> Int = "ml_is_windows"
+extern "C" fn ml_is_windows() -> Int32 = "ml_is_windows"
 
 ///|
 /// The last failure message (UTF-8, empty when none).
@@ -32,7 +32,7 @@ extern "C" fn ml_stat_size(path : Bytes) -> Int64 = "ml_stat_size"
 ///|
 /// 1 for a directory, 0 for a non-directory, negative on failure.
 #borrow(path)
-extern "C" fn ml_is_dir(path : Bytes) -> Int = "ml_is_dir"
+extern "C" fn ml_is_dir(path : Bytes) -> Int32 = "ml_is_dir"
 
 ///|
 /// Encode a MoonBit string as a NUL-terminated UTF-8 byte buffer.
@@ -44,7 +44,7 @@ fn cstr(s : String) -> Bytes {
 /// The last OS error, for callers that got a bare negative status.
 fn last_error() -> String {
   let raw = ml_last_error()
-  let text = @utf8.decode_lossy(raw.view())
+  let text = @utf8.decode_lossy(raw.exact_view())
   if text == "" {
     "unknown OS error".to_string()
   } else {
@@ -65,7 +65,7 @@ fn unpack_envelope(kind : String, raw : Bytes) -> Result[String, String] {
     return Err("\{kind}: malformed response from native layer")
   }
   let status = raw[0].to_int()
-  let payload = @utf8.decode_lossy(raw.view(start=1))
+  let payload = @utf8.decode_lossy(raw.exact_view(start=1))
   if status == 0 {
     Ok(payload)
   } else if payload == "" {
@@ -140,7 +140,10 @@ extern "C" fn ml_read_text_file(path : Bytes, max_bytes : Int64) -> Bytes = "ml_
 /// materialized: a tool that asks for a 100 MB log gets an error, not 100 MB of
 /// heap. Text is decoded lossily because model-facing tools should show a
 /// mojibake character rather than fail on one bad byte.
-pub fn read_text_file(path : String, max_bytes : Int64) -> Result[String, String] {
+pub fn read_text_file(
+  path : String,
+  max_bytes : Int64,
+) -> Result[String, String] {
   let raw = ml_read_text_file(cstr(path), max_bytes)
   match unpack_envelope("read_file", raw) {
     Ok(text) => Ok(text)

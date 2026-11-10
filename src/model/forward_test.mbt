@@ -9,7 +9,7 @@
 ///|
 test "forward pass matches the numpy reference" {
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   // Verify the config came from the file, not from defaults.
   assert_eq(m.config.architecture, "llama")
   assert_eq(m.config.n_layer, 2)
@@ -51,7 +51,7 @@ test "forward pass matches the numpy reference" {
 ///|
 test "forward pass is deterministic and cache length is honoured" {
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   for pos, tok in forward_test_tokens {
     m.forward(tok, pos).unwrap()
     m.cache.len = pos + 1
@@ -74,7 +74,7 @@ test "forward pass is deterministic and cache length is honoured" {
 ///|
 test "a decode step after the prefill continues the same sequence" {
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   // Prefill all but the last prompt token.
   let n = forward_test_tokens.length()
   for pos = 0; pos < n - 1; pos = pos + 1 {
@@ -98,7 +98,7 @@ test "a decode step after the prefill continues the same sequence" {
 ///|
 test "positions past the context length are rejected" {
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   // `limit` is the model's context length; the allocation starts smaller and
   // grows, so the rejection point is the limit rather than the current capacity.
   assert_eq(m.cache.limit, 64)
@@ -116,7 +116,7 @@ test "positions past the context length are rejected" {
 ///|
 test "the cache starts small and grows on demand" {
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   // The fixture's context is 64, below the 512-position default, so the initial
   // allocation is the whole context and no growth is needed here.
   assert_eq(m.cache.capacity, 64)
@@ -132,7 +132,7 @@ test "the cache starts small and grows on demand" {
 ///|
 test "growth preserves the positions already written" {
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   // Fill some positions, record the logits, grow the cache explicitly, then
   // confirm the same prefix still produces the same result: that is the property
   // a re-layout could plausibly break.
@@ -167,7 +167,7 @@ test "growth preserves the positions already written" {
 ///|
 test "grow_to beyond the context clamps and never shrinks" {
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   let start = m.cache.capacity
   // A smaller request is ignored rather than shrinking the allocation.
   assert_eq(m.cache.grow_to(start - 1), start)
@@ -182,7 +182,7 @@ test "grow_to beyond the context clamps and never shrinks" {
 ///|
 test "out-of-vocabulary tokens are rejected" {
   let f = @gguf.parse(forward_test_gguf).unwrap()
-  let m = Model::load(f).unwrap()
+  let m = @model.Model::load(f).unwrap()
   match m.forward(forward_test_vocab, 0) {
     Ok(_) => fail("a token beyond the vocabulary must be rejected")
     Err(_) => ()

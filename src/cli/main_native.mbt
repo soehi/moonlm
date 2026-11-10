@@ -14,7 +14,7 @@ fn tensor_row(t : @gguf.TensorInfo) -> String {
     Some(n) => n.to_string()
     None => "?"
   }
-  let sb = StringBuilder::new()
+  let sb = StringBuilder()
   sb.write_string("  \{t.name}\n")
   sb.write_string("    dims:   \{dims}\n")
   sb.write_string("    type:   \{ty.name} (id \{t.type_id})\n")
@@ -29,10 +29,7 @@ fn tensor_row(t : @gguf.TensorInfo) -> String {
 /// checks first; the rest is listed by name only, because a full dump is
 /// dominated by tokenizer and template strings.
 let key_metadata_keys : Array[String] = [
-  "general.architecture",
-  "general.name",
-  "general.quantization_version",
-  "general.file_type",
+  "general.architecture", "general.name", "general.quantization_version", "general.file_type",
   "general.alignment",
 ]
 
@@ -56,7 +53,7 @@ fn arch_keys(arch : String) -> Array[String] {
 ///|
 /// Human-readable report, modeled on what `gguf_dump` surfaces.
 fn render_text(path : String, f : @gguf.GgufFile) -> String {
-  let sb = StringBuilder::new()
+  let sb = StringBuilder()
   sb.write_string("file:     \{path}\n")
   sb.write_string("size:     \{f.len()} bytes (\{format_bytes(f.len())})\n")
   sb.write_string("version:  GGUF v\{f.version}\n")
@@ -134,7 +131,7 @@ fn render_text(path : String, f : @gguf.GgufFile) -> String {
 
 ///|
 /// Count tensors whose type has this name, for the type breakdown.
-fn count_tensors_of(f : @gguf.GgufFile, type_name : String) -> Int {
+fn count_tensors_of(f : @gguf.GgufFile, type_name : String) -> Int32 {
   let mut n = 0
   for t in f.tensors {
     if t.ggml_type().name == type_name {
@@ -264,7 +261,8 @@ fn meta_to_json(v : @gguf.MetaValue) -> Json {
     @gguf.U64(x) => Json::number(x.to_double())
     @gguf.I64(x) => Json::number(x.to_double())
     @gguf.F64(x) => Json::number(x)
-    @gguf.Array(@gguf.Materialized(elems)) => Json::array(elems.map(meta_to_json))
+    @gguf.Array(@gguf.Materialized(elems)) =>
+      Json::array(elems.map(meta_to_json))
     @gguf.Array(@gguf.Summarized(s)) => {
       let m : Map[String, Json] = Map([])
       m["array_elem_type"] = Json::string(@gguf.value_type_name(s.elem_type))
@@ -280,38 +278,19 @@ fn meta_to_json(v : @gguf.MetaValue) -> Json {
 /// Usage text for the CLI.
 fn usage() -> String {
   [
-    "moonlm — local LLM inference engine and agent runtime (MoonBit)",
-    "",
-    "Usage:",
-    "  moonlm inspect <model.gguf> [--json]",
-    "  moonlm dequant <model.gguf> <tensor> [--limit N]",
-    "  moonlm tokenize <model.gguf> <text>",
-    "  moonlm generate <model.gguf> <prompt> [options]",
-    "  moonlm chat <model.gguf> [options]",
-    "  moonlm bench <model.gguf> [--tokens N]",
-    "  moonlm agent --task \"...\" --workspace <dir> [--model <gguf>]",
-    "",
-    "Commands:",
-    "  inspect    Summarize a GGUF model: version, metadata, tensor inventory",
-    "  dequant    Dequantize one tensor and print its leading values",
-    "  tokenize   Show how a string encodes to token ids",
-    "  generate   Generate a continuation for a prompt",
-    "  chat       Interactive multi-turn chat (reads stdin)",
-    "  bench      Measure prefill and decode speed",
-    "  agent      Run the sandboxed tool-using agent loop",
-    "",
-    "Options:",
-    "  --json     Emit the report as JSON instead of text",
-    "  -h, --help Show this message",
-    "",
-    "generate/chat options:",
-    "  --max-tokens N      Tokens to generate (default 128)",
-    "  --temperature T     Sampling temperature (default 0 = greedy)",
-    "  --top-k K           Keep the K best tokens",
-    "  --top-p P           Nucleus sampling threshold",
-    "  --seed N            PRNG seed (default 42)",
-    "  --raw               Do not wrap the prompt in the chat template",
-    "  --dump-tokens       Print generated token ids instead of text",
+    "moonlm — local LLM inference engine and agent runtime (MoonBit)", "", "Usage:",
+    "  moonlm inspect <model.gguf> [--json]", "  moonlm dequant <model.gguf> <tensor> [--limit N]",
+    "  moonlm tokenize <model.gguf> <text>", "  moonlm generate <model.gguf> <prompt> [options]",
+    "  moonlm chat <model.gguf> [options]", "  moonlm bench <model.gguf> [--tokens N]",
+    "  moonlm agent --task \"...\" --workspace <dir> [--model <gguf>]", "", "Commands:",
+    "  inspect    Summarize a GGUF model: version, metadata, tensor inventory", "  dequant    Dequantize one tensor and print its leading values",
+    "  tokenize   Show how a string encodes to token ids", "  generate   Generate a continuation for a prompt",
+    "  chat       Interactive multi-turn chat (reads stdin)", "  bench      Measure prefill and decode speed",
+    "  agent      Run the sandboxed tool-using agent loop", "", "Options:", "  --json     Emit the report as JSON instead of text",
+    "  -h, --help Show this message", "", "generate/chat options:", "  --max-tokens N      Tokens to generate (default 128)",
+    "  --temperature T     Sampling temperature (default 0 = greedy)", "  --top-k K           Keep the K best tokens",
+    "  --top-p P           Nucleus sampling threshold", "  --seed N            PRNG seed (default 42)",
+    "  --raw               Do not wrap the prompt in the chat template", "  --dump-tokens       Print generated token ids instead of text",
   ].join("\n")
 }
 
@@ -322,7 +301,7 @@ fn usage() -> String {
 /// This exists so the real-model cross-check can compare *decoded weights*, not
 /// just the directory. Comparing directory metadata proves the container is read
 /// correctly; comparing values proves the block layouts are.
-fn run_dequant(args : Array[String]) -> Int {
+fn run_dequant(args : Array[String]) -> Int32 {
   if args.length() < 4 {
     println("error: 'dequant' needs a model path and a tensor name\n")
     println(usage())
@@ -334,7 +313,7 @@ fn run_dequant(args : Array[String]) -> Int {
   if args.length() > 5 && args[4] == "--limit" {
     // `parse_int` raises on bad input; a malformed flag value is a usage error,
     // so the raise is caught here and reported rather than propagated.
-    let parsed : Int? = try @string.parse_int(args[5][:]) catch {
+    let parsed : Int32? = try @string.parse_int(args[5][:]) catch {
       _ => None
     } noraise {
       n => Some(n)
@@ -392,7 +371,7 @@ fn run_dequant(args : Array[String]) -> Int {
 
 ///|
 /// Run the CLI and return the process exit status.
-fn run(args : Array[String]) -> Int {
+fn run(args : Array[String]) -> Int32 {
   if args.length() <= 1 {
     println(usage())
     return 2
@@ -422,10 +401,12 @@ fn run(args : Array[String]) -> Int {
   }
   if subcommand == "logits" {
     if args.length() < 4 {
-      println("error: 'logits' needs a model path and a comma-separated token id list")
+      println(
+        "error: 'logits' needs a model path and a comma-separated token id list",
+      )
       return 2
     }
-    let ids : Array[Int] = []
+    let ids : Array[Int32] = []
     let mut bad = false
     for part in args[3].split(",") {
       match parse_int_arg(part.to_owned()) {

@@ -4,9 +4,9 @@ env:
   # Floor, not a pin: the installer can only fetch "latest" (every versioned
   # /binaries/<version>/... path answers 403), so an exact-match assertion
   # would go red on each upstream release for no reason. Numeric comparison,
-  # so 0.10.9 is below 0.10.16 while 0.11 and 1.0 still pass.
-  # Last verified green: moon 0.1.20261028 / moonc v0.10.18.
-  MOONC_MIN: "0.10.16"
+  # so 0.10.18 is below 0.10.19 while 0.11 and 1.0 still pass.
+  # Locally verified: moon 0.1.20261029 / moonc v0.10.19.
+  MOONC_MIN: "0.10.19"
 
 on:
   push:
@@ -58,10 +58,11 @@ jobs:
         run: moon update
 
       - name: Static check (native)
-        run: moon check --target native
+        # Result-returning APIs are intentional public contracts, not migration errors.
+        run: moon check --target native --deny-warn --warn-list '-result_error_return'
 
       - name: Static check (wasm-gc)
-        run: moon check --target wasm-gc
+        run: moon check --target wasm-gc --deny-warn --warn-list '-result_error_return'
 
       - name: Test (native)
         run: moon test --target native
@@ -87,7 +88,9 @@ jobs:
       # consumers actually load, so a break here has to fail CI even though the
       # rest of the tree builds for two other backends.
       - name: Build (js, the browser target)
-        run: moon build src/web --target js --release
+        run: |
+          moon check src/web --target js --deny-warn --warn-list '-result_error_return'
+          moon build src/web --target js --release
 
       - name: Verify tokenizer fixture attribution and hashes
         run: python tools/check_tokenizer_provenance.py
@@ -150,13 +153,13 @@ jobs:
         run: moon update
 
       - name: Static check (native)
-        run: moon check --target native
+        run: moon check --target native --deny-warn --warn-list '-result_error_return'
 
       - name: Test (native)
         run: moon test --target native
 
       - name: Static check (wasm-gc)
-        run: moon check --target wasm-gc
+        run: moon check --target wasm-gc --deny-warn --warn-list '-result_error_return'
 
       - name: Test (wasm-gc)
         run: moon test --target wasm-gc

@@ -405,13 +405,13 @@ def emit_qwen_fixture() -> None:
         ),
         "///|",
         "/// The prompt the expected logits correspond to.",
-        f"let forward_qwen_tokens : Array[Int] = [{', '.join(str(t) for t in tokens)}]",
+        f"let forward_qwen_tokens : Array[Int32] = [{', '.join(str(t) for t in tokens)}]",
         "",
         f64_array("forward_qwen_logits", logits, "Reference logits at the final prompt position."),
         "",
         "///|",
         "/// Number of logits in the reference result (= vocabulary size).",
-        f"let forward_qwen_vocab : Int = {len(logits)}",
+        f"let forward_qwen_vocab : Int32 = {len(logits)}",
         "",
     ]
     QWEN_OUT.write_text("\n".join(parts), encoding="utf-8")
@@ -460,13 +460,13 @@ def main() -> None:
         ),
         "///|",
         "/// The prompt the expected logits correspond to.",
-        f"let forward_test_tokens : Array[Int] = [{', '.join(str(t) for t in tokens)}]",
+        f"let forward_test_tokens : Array[Int32] = [{', '.join(str(t) for t in tokens)}]",
         "",
         f64_array("forward_test_logits", logits, "Reference logits at the final prompt position."),
         "",
         "///|",
         "/// Number of logits in the reference result (= vocabulary size).",
-        f"let forward_test_vocab : Int = {len(logits)}",
+        f"let forward_test_vocab : Int32 = {len(logits)}",
         "",
     ]
     OUT.write_text("\n".join(parts), encoding="utf-8")

@@ -11,9 +11,9 @@ struct AgentCliOptions {
   task : String
   workspace : String
   model : String
-  max_steps : Int
-  max_tokens : Int
-  max_observation_chars : Int
+  max_steps : Int32
+  max_tokens : Int32
+  max_observation_chars : Int32
   verbose : Bool
 }
 
@@ -25,8 +25,7 @@ struct AgentCliOptions {
 /// flag rather than a guess.
 fn default_model_candidates() -> Array[String] {
   [
-    "D:/llmdata/qwen2.5-0.5b-instruct-q4_k_m.gguf",
-    "D:/llmdata/qwen2.5-0.5b-q4_0.gguf",
+    "D:/llmdata/qwen2.5-0.5b-instruct-q4_k_m.gguf", "D:/llmdata/qwen2.5-0.5b-q4_0.gguf",
   ]
 }
 
@@ -100,12 +99,7 @@ fn parse_agent_args(args : Array[String]) -> Result[AgentCliOptions, String] {
     }
   }
   let task = match task {
-    Some(t) =>
-      if t == "" {
-        return Err("--task must not be empty")
-      } else {
-        t
-      }
+    Some(t) => if t == "" { return Err("--task must not be empty") } else { t }
     None => return Err("agent needs --task \"...\"")
   }
   let workspace = match workspace {
@@ -143,7 +137,7 @@ fn parse_agent_args(args : Array[String]) -> Result[AgentCliOptions, String] {
 ///|
 /// Whether a path exists, without pulling the tools package into argv parsing.
 #borrow(path)
-extern "C" fn ml_path_exists(path : Bytes) -> Int = "ml_path_exists"
+extern "C" fn ml_path_exists(path : Bytes) -> Int32 = "ml_path_exists"
 
 ///|
 fn fs_ok(path : String) -> Bool {
@@ -152,7 +146,7 @@ fn fs_ok(path : String) -> Bool {
 
 ///|
 /// Run the agent end to end and print a transcript.
-fn run_agent_cli(args : Array[String]) -> Int {
+fn run_agent_cli(args : Array[String]) -> Int32 {
   let opts = match parse_agent_args(args) {
     Ok(o) => o
     Err(e) => {
@@ -196,7 +190,7 @@ fn run_agent_cli(args : Array[String]) -> Int {
       return 1
     }
   }
-  registry.add(@tools.CalcTool::{}) |> ignore
+  registry.add(@tools.CalcTool::{ }) |> ignore
   let config : @agent.AgentConfig = {
     max_steps: opts.max_steps,
     max_calls_per_step: 4,
@@ -243,7 +237,9 @@ fn run_agent_cli(args : Array[String]) -> Int {
       1
     }
     InvalidArguments(message~) => {
-      println("(model produced an invalid tool call after \{result.steps} steps)")
+      println(
+        "(model produced an invalid tool call after \{result.steps} steps)",
+      )
       println("  \{message}")
       1
     }
@@ -252,7 +248,9 @@ fn run_agent_cli(args : Array[String]) -> Int {
       1
     }
     ContextOverflow => {
-      println("error: the prompt does not fit the model's context even after folding the history")
+      println(
+        "error: the prompt does not fit the model's context even after folding the history",
+      )
       1
     }
   }
@@ -261,21 +259,11 @@ fn run_agent_cli(args : Array[String]) -> Int {
 ///|
 fn agent_usage() -> String {
   [
-    "Usage: moonlm agent --task \"...\" --workspace <dir> [options]",
-    "",
-    "Runs the agent loop with the read-only local tools (list_dir, read_file,",
-    "grep_text, calc), sandboxed to --workspace.",
-    "",
-    "Options:",
-    "  --task TEXT          What to do (required)",
-    "  --workspace DIR      Sandbox root for every file tool (required)",
-    "  --model PATH         GGUF model; a Qwen2 file is required",
-    "  --max-steps N        Assistant turns before stopping (default 6)",
-    "  --max-tokens N       Tokens per generation (default 384)",
-    "  --max-observation N  Characters of a tool result kept (default 4096)",
-    "  --verbose            Print each tool observation",
-    "",
-    "Example:",
-    "  moonlm agent --task \"总结 docs/ 下的关键结论\" --workspace . --verbose",
+    "Usage: moonlm agent --task \"...\" --workspace <dir> [options]", "", "Runs the agent loop with the read-only local tools (list_dir, read_file,",
+    "grep_text, calc), sandboxed to --workspace.", "", "Options:", "  --task TEXT          What to do (required)",
+    "  --workspace DIR      Sandbox root for every file tool (required)", "  --model PATH         GGUF model; a Qwen2 file is required",
+    "  --max-steps N        Assistant turns before stopping (default 6)", "  --max-tokens N       Tokens per generation (default 384)",
+    "  --max-observation N  Characters of a tool result kept (default 4096)", "  --verbose            Print each tool observation",
+    "", "Example:", "  moonlm agent --task \"总结 docs/ 下的关键结论\" --workspace . --verbose",
   ].join("\n")
 }

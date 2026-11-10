@@ -20,15 +20,15 @@ pub(all) enum PromptStyle {
 /// Loop limits.
 pub(all) struct AgentConfig {
   /// Maximum assistant turns (generations) before stopping.
-  max_steps : Int
+  max_steps : Int32
   /// Maximum tool calls executed per assistant turn.
-  max_calls_per_step : Int
+  max_calls_per_step : Int32
   /// Tokens requested per generation.
-  max_tokens_per_step : Int
+  max_tokens_per_step : Int32
   /// Characters of a single tool observation kept before truncation.
-  max_observation_chars : Int
+  max_observation_chars : Int32
   /// Characters of conversation history kept when the rolling window folds.
-  max_history_chars : Int
+  max_history_chars : Int32
   /// Sampling temperature; 0 means greedy, which is what tool use wants.
   temperature : Double
   /// Sampling seed, so a run is reproducible.
@@ -82,7 +82,7 @@ pub(all) struct AgentResult {
   /// Why the loop stopped.
   stop : StopReason
   /// Assistant turns used.
-  steps : Int
+  steps : Int32
 } derive(Eq, Debug)
 
 ///|
@@ -118,11 +118,11 @@ pub(all) enum StopReason {
 /// Character count, not bytes: the limit is about what the model can read, and
 /// a byte limit would silently cut a CJK observation to a third of the intended
 /// size.
-pub fn truncate_observation(text : String, limit : Int) -> (String, Bool) {
+pub fn truncate_observation(text : String, limit : Int32) -> (String, Bool) {
   if limit <= 0 || text.length() <= limit {
     return (text, false)
   }
-  let kept = StringBuilder::new()
+  let kept = StringBuilder()
   let mut n = 0
   for ch in text {
     if n >= limit {
@@ -140,8 +140,7 @@ fn render_message(style : PromptStyle, m : Message) -> String {
   match style {
     Qwen2ChatMl =>
       match m {
-        Text(role~, content~) =>
-          "<|im_start|>\{role}\n\{content}<|im_end|>\n"
+        Text(role~, content~) => "<|im_start|>\{role}\n\{content}<|im_end|>\n"
         Assistant(content~) =>
           // The completion already ends wherever the model stopped; the chat
           // template adds no closing tag of its own for a tool-call turn.
@@ -167,8 +166,10 @@ pub fn system_prompt(
 ) -> String {
   match style {
     Qwen2ChatMl => {
-      let sb = StringBuilder::new()
-      sb.write_string("You are Qwen, created by Alibaba Cloud. You are a helpful assistant.\n\n")
+      let sb = StringBuilder()
+      sb.write_string(
+        "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.\n\n",
+      )
       sb.write_string("# Tools\n\n")
       sb.write_string(
         "You may call one or more functions to assist with the user query.\n\n",
@@ -197,7 +198,7 @@ fn build_prompt(
   system : String,
   history : Array[Message],
 ) -> String {
-  let sb = StringBuilder::new()
+  let sb = StringBuilder()
   sb.write_string(render_message(style, Text(role="system", content=system)))
   for m in history {
     sb.write_string(render_message(style, m))
@@ -213,7 +214,7 @@ fn build_prompt(
 /// limit: dropping it would leave the model with no task. This is the "rolling
 /// window" the plan calls for; no retrieval is attempted because BM25 over six
 /// short messages would add a tokenizer dependency for no measured gain.
-pub fn fold_history(history : Array[Message], limit : Int) -> Array[Message] {
+pub fn fold_history(history : Array[Message], limit : Int32) -> Array[Message] {
   let mut total = 0
   for m in history {
     total = total + message_chars(m)
@@ -239,7 +240,7 @@ pub fn fold_history(history : Array[Message], limit : Int) -> Array[Message] {
 }
 
 ///|
-fn message_chars(m : Message) -> Int {
+fn message_chars(m : Message) -> Int32 {
   match m {
     Text(content~, ..) => content.length() + 32
     Assistant(content~) => content.length() + 32
@@ -279,17 +280,11 @@ pub fn run_agent(
     let ctx = engine.context_length()
     let prompt_tokens = match engine.encode(prompt) {
       Ok(t) => t.length()
-      Err(e) => {
-        return {
-          answer: "",
-          executed,
-          stop: EngineError(message=e),
-          steps,
-        }
-      }
+      Err(e) =>
+        return { answer: "", executed, stop: EngineError(message=e), steps, }
     }
     if prompt_tokens + config.max_tokens_per_step >= ctx {
-      return { answer: "", executed, stop: ContextOverflow, steps }
+      return { answer: "", executed, stop: ContextOverflow, steps, }
     }
     let sampler = if config.temperature <= 0.0 {
       @sampler.Greedy
@@ -301,35 +296,24 @@ pub fn run_agent(
     // render a multi-byte character split across tokens as replacement
     // characters, and a mangled `<tool_call>` is exactly what the parser must
     // not see.
-    let generated_tokens : Array[Int] = []
-    match @engine.Engine::generate(
-      engine,
-      prompt,
-      config.max_tokens_per_step,
-      sampler,
-      config.seed + steps.to_uint64(),
-      fn(id, _) { generated_tokens.push(id) },
-    ) {
-      Err(e) => {
-        return {
-          answer: "",
-          executed,
-          stop: EngineError(message=e),
-          steps,
-        }
-      }
+    let generated_tokens : Array[Int32] = []
+    match
+      @engine.Engine::generate(
+        engine,
+        prompt,
+        config.max_tokens_per_step,
+        sampler,
+        config.seed + steps.to_uint64(),
+        fn(id, _) { generated_tokens.push(id) },
+      ) {
+      Err(e) =>
+        return { answer: "", executed, stop: EngineError(message=e), steps, }
       Ok(_) => ()
     }
     let generated = match engine.decode(generated_tokens) {
       Ok(t) => t
-      Err(e) => {
-        return {
-          answer: "",
-          executed,
-          stop: EngineError(message=e),
-          steps,
-        }
-      }
+      Err(e) =>
+        return { answer: "", executed, stop: EngineError(message=e), steps, }
     }
     let parsed = parse_completion(format, generated)
     history.push(Assistant(content=generated))
@@ -351,7 +335,7 @@ pub fn run_agent(
         )
         continue
       }
-      return { answer: parsed.text, executed, stop: Answered, steps }
+      return { answer: parsed.text, executed, stop: Answered, steps, }
     }
     if !parsed.errors.is_empty() {
       // A broken call is reported to the model as a tool observation so it can
@@ -402,7 +386,7 @@ pub fn run_agent(
       None => ()
     }
   }
-  { answer: "", executed, stop: StepLimit, steps }
+  { answer: "", executed, stop: StepLimit, steps, }
 }
 
 ///|
@@ -415,7 +399,7 @@ pub fn run_agent(
 fn execute_call(
   registry : ToolRegistry,
   call : ParsedCall,
-  observation_limit : Int,
+  observation_limit : Int32,
 ) -> (String, Bool, String?, Bool) {
   let tool = match registry.find(call.name) {
     Some(t) => t
@@ -450,8 +434,45 @@ fn execute_call(
             Some(message),
             false,
           )
-        SandboxDenied(message~) => ("sandbox denied: \{message}", false, None, false)
+        SandboxDenied(message~) =>
+          ("sandbox denied: \{message}", false, None, false)
         IoFailure(message~) => ("tool failed: \{message}", false, None, false)
       }
   }
 }
+
+///|
+pub extend PromptStyle with Eq::{not_equal, equal}
+
+///|
+pub extend PromptStyle with @debug.Debug::{to_repr}
+
+///|
+pub extend AgentConfig with Eq::{not_equal, equal}
+
+///|
+pub extend AgentConfig with @debug.Debug::{to_repr}
+
+///|
+pub extend Message with Eq::{not_equal, equal}
+
+///|
+pub extend Message with @debug.Debug::{to_repr}
+
+///|
+pub extend AgentResult with Eq::{not_equal, equal}
+
+///|
+pub extend AgentResult with @debug.Debug::{to_repr}
+
+///|
+pub extend ExecutedCall with Eq::{not_equal, equal}
+
+///|
+pub extend ExecutedCall with @debug.Debug::{to_repr}
+
+///|
+pub extend StopReason with Eq::{not_equal, equal}
+
+///|
+pub extend StopReason with @debug.Debug::{to_repr}

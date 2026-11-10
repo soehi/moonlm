@@ -3,6 +3,16 @@
 Tags are vX.Y.Z on the commit whose moon.mod carries that version.
 Publish order: soehi/gguf -> soehi/moonlm -> soehi/edgeflow.
 
+## Unreleased
+
+- Migrate to MoonBit compiler 0.10.19: explicit-width integer names, attribute
+  derives, current StringBuilder/Bytes view APIs, and explicit trait-method
+  extensions preserving existing method-style calls.
+- Qualify blackbox-test package references; keep Result-returning public APIs
+  unchanged. CI requires moonc >= 0.10.19 and rejects other migration warnings.
+- Update fixture generators to emit Int32 while retaining tokenizer data and
+  attribution. Historical benchmark reports retain their original toolchain.
+
 ## 0.3.0 — 2026-11-07
 
 - Default the browser to single-turn chat with explicit SmolLM2/Qwen2.5 ChatML

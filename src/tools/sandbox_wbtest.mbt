@@ -98,13 +98,10 @@ test "a listing includes a symlink as an entry name" {
 test "a .. segment is rejected before touching the filesystem" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  for rel in [
-    "../outside/secret.txt",
-    "sub/../../outside/secret.txt",
-    "..",
-    "sub/..",
-    "..\\outside\\secret.txt",
-  ] {
+  for
+    rel in [
+      "../outside/secret.txt", "sub/../../outside/secret.txt", "..", "sub/..", "..\\outside\\secret.txt",
+    ] {
     match sb.resolve(rel) {
       Ok(p) => fail("resolve(\{rel}) must be rejected, got \{p}")
       Err(e) => assert_true(e.contains(".."))
@@ -116,7 +113,8 @@ test "a .. segment is rejected before touching the filesystem" {
 test "absolute paths are rejected" {
   let root = sandbox_root()
   let sb = Sandbox::open(fixture_workspace(root)).unwrap()
-  for rel in ["/etc/passwd", "\\Windows\\win.ini", "C:/Windows/win.ini", "c:\\x"] {
+  for
+    rel in ["/etc/passwd", "\\Windows\\win.ini", "C:/Windows/win.ini", "c:\\x"] {
     match sb.resolve(rel) {
       Ok(p) => fail("resolve(\{rel}) must be rejected, got \{p}")
       Err(e) => assert_true(e.contains("absolute"))

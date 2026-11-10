@@ -13,7 +13,7 @@ calibrated against and why they have the slack they do.
 | Item | Value |
 |---|---|
 | MoonBit | `0.1.20260819` (original baseline) |
-| MoonBit, last verified | `0.1.20261028` (`moonc v0.10.18`) |
+| MoonBit, last verified | `moon 0.1.20261029` / `moonc v0.10.19` |
 | Target (native) | `native`, `--release` |
 | Target (browser) | `js`, `--release` |
 | Threads | 1 (single-threaded; the engine has no threading) |
@@ -24,7 +24,7 @@ version it actually used and warns when it differs from the baseline above.
 
 CI is different: upstream serves no versioned toolchain artifacts (every
 `/binaries/<version>/...` path answers 403; only `latest` resolves), so CI
-installs `latest` and asserts a **floor** of `moonc >= 0.10.16` rather than an
+installs `latest` and asserts a **floor** of `moonc >= 0.10.19` rather than an
 exact string. An exact assertion goes red on every upstream release without
 the code changing. The tradeoff is that a future release could break the
 build; "last verified" is the version to fall back to when that happens.

@@ -37,7 +37,7 @@ let last_error : Ref[String] = Ref("")
 
 ///|
 /// Record a failure and return the status code that reports it.
-fn fail(msg : String) -> Int {
+fn fail(msg : String) -> Int32 {
   last_error.val = msg
   -1
 }
@@ -48,7 +48,7 @@ fn fail(msg : String) -> Int {
 /// Returns a handle >= 0, or -1 with the reason in `moonlm_last_error()`.
 /// `name` is used only in messages.
 #export_name("moonlm_load")
-pub fn moonlm_load(buf : Bytes, name : String) -> Int {
+pub fn moonlm_load(buf : Bytes, name : String) -> Int32 {
   let engine = match @engine.PureEngine::load_bytes(buf, name) {
     Ok(e) => e
     Err(e) => return fail(e)
@@ -69,7 +69,7 @@ pub fn moonlm_last_error() -> String {
 ///|
 /// Release a loaded model, so a long-lived page can drop the memory.
 #export_name("moonlm_free")
-pub fn moonlm_free(handle : Int) -> Int {
+pub fn moonlm_free(handle : Int32) -> Int32 {
   if handle < 0 || handle >= slots.length() {
     return fail("no model for handle \{handle}")
   }
@@ -83,7 +83,7 @@ pub fn moonlm_free(handle : Int) -> Int {
 /// Returns an empty array on error, distinguishable from a real encoding
 /// because every non-empty text encodes to at least one token.
 #export_name("moonlm_tokenize")
-pub fn moonlm_tokenize(handle : Int, text : String) -> FixedArray[Int] {
+pub fn moonlm_tokenize(handle : Int32, text : String) -> FixedArray[Int32] {
   match engine_of(handle) {
     Err(e) => {
       fail(e) |> ignore
@@ -97,7 +97,7 @@ pub fn moonlm_tokenize(handle : Int, text : String) -> FixedArray[Int] {
 /// The token ids produced by the most recent `moonlm_generate`, so a page can
 /// show tokens rather than only text and compare against a reference
 /// implementation. Cleared at the start of every generate call.
-let last_tokens : Array[Int] = []
+let last_tokens : Array[Int32] = []
 
 ///|
 /// Generate a continuation, calling `on_token` with each piece as it arrives.
@@ -114,9 +114,9 @@ let last_tokens : Array[Int] = []
 /// piece. The accumulated text from `moonlm_generate_text` is always correct.
 #export_name("moonlm_generate")
 pub fn moonlm_generate(
-  handle : Int,
+  handle : Int32,
   prompt : String,
-  max_tokens : Int,
+  max_tokens : Int32,
   temperature : Double,
   on_token : (String) -> Unit,
 ) -> FixedArray[Double] {
@@ -130,15 +130,19 @@ pub fn moonlm_generate(
   let sampler : @sampler.Sampler = if temperature <= 0.0 {
     @sampler.Greedy
   } else {
-    @sampler.Temperature(temperature=temperature)
+    @sampler.Temperature(temperature~)
   }
   last_tokens.clear()
   // The engine reports failures per phase with a position, which is more useful
   // than a bare "generation failed" when a long prompt runs past the context.
-  match @engine.Engine::generate(engine, prompt, max_tokens, sampler, 42UL, fn(id, piece) {
-    last_tokens.push(id)
-    on_token(piece)
-  }) {
+  match
+    @engine.Engine::generate(engine, prompt, max_tokens, sampler, 42UL, fn(
+      id,
+      piece,
+    ) {
+      last_tokens.push(id)
+      on_token(piece)
+    }) {
     Err(e) => {
       fail(e) |> ignore
       []
@@ -148,7 +152,11 @@ pub fn moonlm_generate(
       [
         stats.prompt_tokens.to_double(),
         stats.generated_tokens.to_double(),
-        if stats.hit_eos { 1.0 } else { 0.0 },
+        if stats.hit_eos {
+          1.0
+        } else {
+          0.0
+        },
         stats.prefill_seconds,
         stats.decode_seconds,
       ]
@@ -159,7 +167,7 @@ pub fn moonlm_generate(
 ///|
 /// The token ids from the last `moonlm_generate`.
 #export_name("moonlm_last_tokens")
-pub fn moonlm_last_tokens() -> FixedArray[Int] {
+pub fn moonlm_last_tokens() -> FixedArray[Int32] {
   FixedArray::from_array(last_tokens)
 }
 
@@ -167,7 +175,7 @@ pub fn moonlm_last_tokens() -> FixedArray[Int] {
 /// Decode token ids back to text, for the caller to turn `moonlm_last_tokens`
 /// into the exact string the model produced.
 #export_name("moonlm_decode")
-pub fn moonlm_decode(handle : Int, ids : FixedArray[Int]) -> String {
+pub fn moonlm_decode(handle : Int32, ids : FixedArray[Int32]) -> String {
   match engine_of(handle) {
     Err(e) => {
       fail(e) |> ignore
@@ -176,7 +184,7 @@ pub fn moonlm_decode(handle : Int, ids : FixedArray[Int]) -> String {
     Ok(engine) => {
       // Core has no FixedArray-to-Array conversion and the tokenizer takes an
       // Array, so the copy is explicit here.
-      let tokens : Array[Int] = []
+      let tokens : Array[Int32] = []
       for i = 0; i < ids.length(); i = i + 1 {
         tokens.push(ids[i])
       }
@@ -189,7 +197,7 @@ pub fn moonlm_decode(handle : Int, ids : FixedArray[Int]) -> String {
 /// How many tokens a string encodes to, so a page can warn before a prompt
 /// exceeds the context rather than after generation fails.
 #export_name("moonlm_count_tokens")
-pub fn moonlm_count_tokens(handle : Int, text : String) -> Int {
+pub fn moonlm_count_tokens(handle : Int32, text : String) -> Int32 {
   match engine_of(handle) {
     Err(e) => {
       fail(e) |> ignore
@@ -202,7 +210,7 @@ pub fn moonlm_count_tokens(handle : Int, text : String) -> Int {
 ///|
 /// The model's own context length, for sizing that warning.
 #export_name("moonlm_context_length")
-pub fn moonlm_context_length(handle : Int) -> Int {
+pub fn moonlm_context_length(handle : Int32) -> Int32 {
   match engine_of(handle) {
     Err(e) => {
       fail(e) |> ignore
@@ -214,7 +222,7 @@ pub fn moonlm_context_length(handle : Int) -> Int {
 
 ///|
 /// Look up a handle, reporting an unknown or freed one by name.
-fn engine_of(handle : Int) -> Result[@engine.PureEngine, String] {
+fn engine_of(handle : Int32) -> Result[@engine.PureEngine, String] {
   if handle < 0 || handle >= slots.length() {
     return Err("no model for handle \{handle}")
   }

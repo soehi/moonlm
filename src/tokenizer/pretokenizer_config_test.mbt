@@ -7,9 +7,7 @@
 ///|
 /// A minimal `GgufFile` with a tiny vocab/merges pair, enough for `load` to
 /// build a `Tokenizer`. Metadata is supplied by the caller.
-fn tokenizer_gguf(
-  extra : Array[(String, @gguf.MetaValue)],
-) -> @gguf.GgufFile {
+fn tokenizer_gguf(extra : Array[(String, @gguf.MetaValue)]) -> @gguf.GgufFile {
   let metadata : Array[(String, @gguf.MetaValue)] = [
     ("tokenizer.ggml.model", @gguf.Str("gpt2")),
     (
@@ -29,7 +27,14 @@ fn tokenizer_gguf(
     ),
     (
       "tokenizer.ggml.token_type",
-      @gguf.Array(@gguf.Materialized([@gguf.I32(3), @gguf.I32(1), @gguf.I32(1), @gguf.I32(1)])),
+      @gguf.Array(
+        @gguf.Materialized([
+          @gguf.I32(3),
+          @gguf.I32(1),
+          @gguf.I32(1),
+          @gguf.I32(1),
+        ]),
+      ),
     ),
     ("tokenizer.ggml.bos_token_id", @gguf.U32(0U)),
     ("tokenizer.ggml.eos_token_id", @gguf.U32(0U)),
@@ -49,17 +54,17 @@ fn tokenizer_gguf(
 
 ///|
 test "missing tokenizer.ggml.pre loads as smollm" {
-  let tk = load(tokenizer_gguf([])).unwrap()
+  let tk = @tokenizer.load(tokenizer_gguf([])).unwrap()
   assert_eq(tk.pre, Smollm)
 }
 
 ///|
 test "gpt2 and smollm both select the GPT-2 rule" {
-  let gpt2 = load(
+  let gpt2 = @tokenizer.load(
     tokenizer_gguf([("tokenizer.ggml.pre", @gguf.Str("gpt2"))]),
   ).unwrap()
   assert_eq(gpt2.pre, Smollm)
-  let smollm = load(
+  let smollm = @tokenizer.load(
     tokenizer_gguf([("tokenizer.ggml.pre", @gguf.Str("smollm"))]),
   ).unwrap()
   assert_eq(smollm.pre, Smollm)
@@ -67,7 +72,7 @@ test "gpt2 and smollm both select the GPT-2 rule" {
 
 ///|
 test "qwen2 selects the Qwen2 pre-tokenizer" {
-  let tk = load(
+  let tk = @tokenizer.load(
     tokenizer_gguf([("tokenizer.ggml.pre", @gguf.Str("qwen2"))]),
   ).unwrap()
   assert_eq(tk.pre, Qwen2)
@@ -75,7 +80,10 @@ test "qwen2 selects the Qwen2 pre-tokenizer" {
 
 ///|
 test "an unknown pre-tokenizer is rejected, not silently defaulted" {
-  match load(tokenizer_gguf([("tokenizer.ggml.pre", @gguf.Str("llama3"))])) {
+  match
+    @tokenizer.load(
+      tokenizer_gguf([("tokenizer.ggml.pre", @gguf.Str("llama3"))]),
+    ) {
     Ok(_) => fail("expected UnsupportedPretokenizer, but load succeeded")
     Err(UnsupportedPretokenizer(pre~)) => assert_eq(pre, "llama3")
     Err(e) => fail("expected UnsupportedPretokenizer, got \{e.message()}")
@@ -84,7 +92,8 @@ test "an unknown pre-tokenizer is rejected, not silently defaulted" {
 
 ///|
 test "a non-string pre value is rejected" {
-  match load(tokenizer_gguf([("tokenizer.ggml.pre", @gguf.U32(1U))])) {
+  match
+    @tokenizer.load(tokenizer_gguf([("tokenizer.ggml.pre", @gguf.U32(1U))])) {
     Ok(_) => fail("expected UnsupportedPretokenizer, but load succeeded")
     Err(UnsupportedPretokenizer(pre~)) => assert_eq(pre, "<non-string>")
     Err(e) => fail("expected UnsupportedPretokenizer, got \{e.message()}")
@@ -98,8 +107,8 @@ test "the pre field reaches encoding" {
   // separates them, so both encode to the character ids. What this pins down
   // is that the field is actually threaded through `encode_plain` and the
   // splitters run, rather than one being hardcoded.
-  let gpt2 = load(tokenizer_gguf([])).unwrap()
-  let qwen = load(
+  let gpt2 = @tokenizer.load(tokenizer_gguf([])).unwrap()
+  let qwen = @tokenizer.load(
     tokenizer_gguf([("tokenizer.ggml.pre", @gguf.Str("qwen2"))]),
   ).unwrap()
   assert_eq(gpt2.encode("ab"), [3])

@@ -12,10 +12,10 @@
 ///|
 /// Special-token id slots a model can reference.
 pub(all) struct SpecialIds {
-  bos : Int
-  eos : Int
-  unk : Int
-  pad : Int
+  bos : Int32
+  eos : Int32
+  unk : Int32
+  pad : Int32
 } derive(Debug, Eq)
 
 ///|
@@ -23,9 +23,9 @@ pub(all) struct SpecialIds {
 pub(all) struct Tokenizer {
   vocab : Array[String]
   /// token string -> id, for the final BPE lookup.
-  token_ids : Map[String, Int]
+  token_ids : Map[String, Int32]
   /// Special-token strings mapped to ids, scanned before BPE.
-  specials : Array[(String, Int)]
+  specials : Array[(String, Int32)]
   merges : MergeTable
   /// Which pre-tokenizer to run, from `tokenizer.ggml.pre`.
   pre : Pretokenizer
@@ -48,9 +48,9 @@ pub(all) suberror TokenizerError {
   /// The tokens array is empty.
   EmptyVocab
   /// A vocab entry is empty, which would make decode ambiguous.
-  EmptyToken(index~ : Int)
+  EmptyToken(index~ : Int32)
   /// The merges array references tokens absent from the vocab.
-  MergeNotInVocab(index~ : Int, token~ : String)
+  MergeNotInVocab(index~ : Int32, token~ : String)
 } derive(Eq, Debug)
 
 ///|
@@ -61,14 +61,17 @@ pub fn TokenizerError::message(self : TokenizerError) -> String {
 ///|
 fn tk_err_string(e : TokenizerError) -> String {
   match e {
-    UnsupportedModel(model~) => "unsupported tokenizer.ggml.model \"\{model}\" (this build implements gpt2)"
+    UnsupportedModel(model~) =>
+      "unsupported tokenizer.ggml.model \"\{model}\" (this build implements gpt2)"
     UnsupportedPretokenizer(pre~) =>
       "unsupported tokenizer.ggml.pre \"\{pre}\" (this build implements smollm and qwen2)"
     MissingKey(key~) => "missing GGUF metadata key \"\{key}\""
-    WrongType(key~, expected~) => "metadata key \"\{key}\" has an unexpected type, expected \{expected}"
+    WrongType(key~, expected~) =>
+      "metadata key \"\{key}\" has an unexpected type, expected \{expected}"
     EmptyVocab => "tokenizer.ggml.tokens is empty"
     EmptyToken(index~) => "tokenizer.ggml.tokens[\{index}] is empty"
-    MergeNotInVocab(index~, token~) => "merges[\{index}] references token \"\{token}\" not present in the vocab"
+    MergeNotInVocab(index~, token~) =>
+      "merges[\{index}] references token \"\{token}\" not present in the vocab"
   }
 }
 
@@ -79,16 +82,19 @@ pub impl Show for TokenizerError with fn to_string(self : TokenizerError) {
 
 ///|
 /// Extract a string metadata value or fail with a named error.
-fn get_string(f : @gguf.GgufFile, key : String) -> Result[String, TokenizerError] {
+fn get_string(
+  f : @gguf.GgufFile,
+  key : String,
+) -> Result[String, TokenizerError] {
   match f.get_string(key) {
     Some(s) => Ok(s)
-    None => Err(MissingKey(key=key))
+    None => Err(MissingKey(key~))
   }
 }
 
 ///|
 /// Extract an optional integer metadata value, with a default.
-fn get_int_or(f : @gguf.GgufFile, key : String, default : Int) -> Int {
+fn get_int_or(f : @gguf.GgufFile, key : String, default : Int32) -> Int32 {
   match f.get_int(key) {
     Some(v) => v.to_int()
     None => default
@@ -102,18 +108,24 @@ fn get_string_array(
   key : String,
 ) -> Result[Array[String], TokenizerError] {
   match f.get(key) {
-    None => Err(MissingKey(key=key))
+    None => Err(MissingKey(key~))
     Some(@gguf.Array(@gguf.Materialized(elems))) => {
       let out : Array[String] = []
       for e in elems {
         match e {
           @gguf.Str(s) => out.push(s)
-          _ => return Err(WrongType(key=key, expected="string array"))
+          _ => return Err(WrongType(key~, expected="string array"))
         }
       }
       Ok(out)
     }
-    Some(_) => Err(WrongType(key=key, expected="string array (was the file parsed with parse_materializing_metadata?)"))
+    Some(_) =>
+      Err(
+        WrongType(
+          key~,
+          expected="string array (was the file parsed with parse_materializing_metadata?)",
+        ),
+      )
   }
 }
 
@@ -130,7 +142,7 @@ pub fn load(f : @gguf.GgufFile) -> Result[Tokenizer, TokenizerError] {
     Err(e) => return Err(e)
   }
   if model != "gpt2" {
-    return Err(UnsupportedModel(model=model))
+    return Err(UnsupportedModel(model~))
   }
   // `tokenizer.ggml.pre` names the pre-tokenizer. Files predating the key use
   // the plain GPT-2 rule, which this build's SmolLM2 scanner also implements;
@@ -162,7 +174,7 @@ pub fn load(f : @gguf.GgufFile) -> Result[Tokenizer, TokenizerError] {
   if vocab.length() == 0 {
     return Err(EmptyVocab)
   }
-  let token_ids : Map[String, Int] = Map([])
+  let token_ids : Map[String, Int32] = Map([])
   for i, t in vocab {
     token_ids[t] = i
   }
@@ -181,9 +193,9 @@ pub fn load(f : @gguf.GgufFile) -> Result[Tokenizer, TokenizerError] {
   // Special tokens: every CONTROL-type entry in token_type. token_type is
   // optional in the format; without it, fall back to treating nothing as
   // special, which still round-trips plain text.
-  let specials : Array[(String, Int)] = []
+  let specials : Array[(String, Int32)] = []
   match f.get("tokenizer.ggml.token_type") {
-    Some(@gguf.Array(@gguf.Materialized(elems))) => {
+    Some(@gguf.Array(@gguf.Materialized(elems))) =>
       for i, e in elems {
         let is_control = match e {
           @gguf.I32(t) => t == 3
@@ -193,7 +205,6 @@ pub fn load(f : @gguf.GgufFile) -> Result[Tokenizer, TokenizerError] {
           specials.push((vocab[i], i))
         }
       }
-    }
     _ => ()
   }
   let merges = MergeTable::new(merges_raw)
@@ -203,7 +214,7 @@ pub fn load(f : @gguf.GgufFile) -> Result[Tokenizer, TokenizerError] {
     specials,
     merges,
     pre,
-    ids: { bos, eos, unk, pad },
+    ids: { bos, eos, unk, pad, },
     add_bos,
     add_eos,
   })
@@ -217,19 +228,19 @@ pub fn Tokenizer::special_ids(self : Tokenizer) -> SpecialIds {
 
 ///|
 /// Vocabulary size (= number of rows in the embedding table).
-pub fn Tokenizer::vocab_size(self : Tokenizer) -> Int {
+pub fn Tokenizer::vocab_size(self : Tokenizer) -> Int32 {
   self.vocab.length()
 }
 
 ///|
 /// Whether `id` is the EOS token.
-pub fn Tokenizer::is_eos(self : Tokenizer, id : Int) -> Bool {
+pub fn Tokenizer::is_eos(self : Tokenizer, id : Int32) -> Bool {
   id == self.ids.eos
 }
 
 ///|
 /// The token string for an id, if in range.
-pub fn Tokenizer::token_text(self : Tokenizer, id : Int) -> String? {
+pub fn Tokenizer::token_text(self : Tokenizer, id : Int32) -> String? {
   if id >= 0 && id < self.vocab.length() {
     Some(self.vocab[id])
   } else {
@@ -243,8 +254,8 @@ pub fn Tokenizer::token_text(self : Tokenizer, id : Int) -> String? {
 /// Special tokens present in the input are emitted as single ids; everything
 /// else goes through pre-tokenization and BPE. Unknown pieces map to the
 /// unknown id. `add_bos`/`add_eos` are honored per the GGUF metadata.
-pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int] {
-  let out : Array[Int] = []
+pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int32] {
+  let out : Array[Int32] = []
   // Scan for special tokens first: longest match at each position. Specials
   // are plain ASCII sequences like <|im_start|>, scanned on the raw text.
   let mut pos = 0
@@ -287,7 +298,7 @@ pub fn Tokenizer::encode(self : Tokenizer, text : String) -> Array[Int] {
 fn Tokenizer::encode_plain(
   self : Tokenizer,
   span : String,
-  out : Array[Int],
+  out : Array[Int32],
 ) -> Unit {
   // The reference pre-tokenizer splits the RAW text (Unicode classes apply to
   // real characters), then byte-encodes each piece. Splitting after byte
@@ -309,7 +320,7 @@ fn Tokenizer::encode_plain(
 
 ///|
 /// Number of code units to advance to skip one character at `pos`.
-fn char_advance(text : String, pos : Int) -> Int {
+fn char_advance(text : String, pos : Int32) -> Int32 {
   // A char is 1 code unit unless it is a surrogate pair (astral plane), which
   // takes 2.
   let unit = text[pos].to_int()
@@ -327,8 +338,11 @@ fn char_advance(text : String, pos : Int) -> Int {
 ///
 /// Ids out of range decode as empty (and are skipped) rather than raising: a
 /// sampled stream is occasionally mid-update and callers want best-effort text.
-pub fn Tokenizer::decode(self : Tokenizer, tokens : Array[Int]) -> String {
-  let mut bytes : FixedArray[Byte] = FixedArray::make(tokens.length() * 16 + 16, b'\x00')
+pub fn Tokenizer::decode(self : Tokenizer, tokens : Array[Int32]) -> String {
+  let mut bytes : FixedArray[Byte] = FixedArray::make(
+    tokens.length() * 16 + 16,
+    b'\x00',
+  )
   let mut n = 0
   for id in tokens {
     if id >= 0 && id < self.vocab.length() {
@@ -340,7 +354,10 @@ pub fn Tokenizer::decode(self : Tokenizer, tokens : Array[Int]) -> String {
       for k = 0; k < written; k = k + 1 {
         if n >= bytes.length() {
           // Grow: reallocation path for pathological sequences.
-          let bigger : FixedArray[Byte] = FixedArray::make(bytes.length() * 2, b'\x00')
+          let bigger : FixedArray[Byte] = FixedArray::make(
+            bytes.length() * 2,
+            b'\x00',
+          )
           for j = 0; j < n; j = j + 1 {
             bigger[j] = bytes[j]
           }
@@ -352,5 +369,23 @@ pub fn Tokenizer::decode(self : Tokenizer, tokens : Array[Int]) -> String {
     }
   }
   let out_bytes = Bytes::from_array(bytes[:n])
-  @utf8.decode_lossy(out_bytes.view())
+  @utf8.decode_lossy(out_bytes.exact_view())
 }
+
+///|
+pub extend SpecialIds with @debug.Debug::{to_repr}
+
+///|
+pub extend SpecialIds with Eq::{not_equal, equal}
+
+///|
+pub extend Tokenizer with @debug.Debug::{to_repr}
+
+///|
+pub extend TokenizerError with Eq::{not_equal, equal}
+
+///|
+pub extend TokenizerError with @debug.Debug::{to_repr}
+
+///|
+pub extend TokenizerError with Show::{to_string, output}

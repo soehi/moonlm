@@ -4,6 +4,7 @@
 // both `native` and `wasm-gc`.
 
 import {
+  "moonbitlang/core/debug",
   "moonbitlang/core/encoding/utf8",
   "soehi/gguf",
 }

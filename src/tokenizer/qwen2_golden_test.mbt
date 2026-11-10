@@ -10,13 +10,13 @@
 // move when Qwen2 cases are added or removed.
 
 ///|
-fn qwen2_tokenizer() -> Tokenizer {
+fn qwen2_tokenizer() -> @tokenizer.Tokenizer {
   let vocab = qwen2_vocab()
-  let token_ids : Map[String, Int] = Map([])
+  let token_ids : Map[String, Int32] = Map([])
   for i, t in vocab {
     token_ids[t] = i
   }
-  let specials : Array[(String, Int)] = []
+  let specials : Array[(String, Int32)] = []
   for i in qwen2_control_ids {
     specials.push((vocab[i], i))
   }
@@ -24,9 +24,9 @@ fn qwen2_tokenizer() -> Tokenizer {
     vocab,
     token_ids,
     specials,
-    merges: MergeTable::new(qwen2_merges()),
+    merges: @tokenizer.MergeTable::new(qwen2_merges()),
     pre: Qwen2,
-    ids: { bos: qwen2_bos, eos: qwen2_eos, unk: qwen2_eos, pad: qwen2_eos },
+    ids: { bos: qwen2_bos, eos: qwen2_eos, unk: qwen2_eos, pad: qwen2_eos, },
     add_bos: false,
     add_eos: false,
   }
@@ -45,12 +45,16 @@ test "qwen2 encode matches reference ids" {
     let want_len = qwen2_ids_lengths()[i]
     let got = tk.encode(text)
     if got.length() != want_len {
-      fail("qwen2 input \{i} (\{truncate(text, 20)}...): length \{got.length()} != \{want_len}")
+      fail(
+        "qwen2 input \{i} (\{truncate(text, 20)}...): length \{got.length()} != \{want_len}",
+      )
     }
     for j = 0; j < want_len; j = j + 1 {
       let want = qwen2_ids_flat()[off + j]
       if got[j] != want {
-        fail("qwen2 input \{i} (\{truncate(text, 20)}...): token[\{j}] = \{got[j]}, expected \{want}")
+        fail(
+          "qwen2 input \{i} (\{truncate(text, 20)}...): token[\{j}] = \{got[j]}, expected \{want}",
+        )
       }
     }
     off = off + want_len
@@ -64,7 +68,9 @@ test "qwen2 encode-decode round-trips exactly" {
     let ids = tk.encode(text)
     let decoded = tk.decode(ids)
     if decoded != text {
-      fail("qwen2 input \{i}: round-trip mismatch\n  input:   \{truncate(text, 60)}\n  decoded: \{truncate(decoded, 60)}")
+      fail(
+        "qwen2 input \{i}: round-trip mismatch\n  input:   \{truncate(text, 60)}\n  decoded: \{truncate(decoded, 60)}",
+      )
     }
   }
 }
@@ -77,7 +83,9 @@ test "qwen2 control tokens encode to single ids" {
     let text = vocab[id]
     let ids = tk.encode(text)
     if ids.length() != 1 || ids[0] != id {
-      fail("qwen2 control token \{text} encoded to \{ids.length()} ids, first \{ids.get(0).unwrap_or(-1)}, expected [\{id}]")
+      fail(
+        "qwen2 control token \{text} encoded to \{ids.length()} ids, first \{ids.get(0).unwrap_or(-1)}, expected [\{id}]",
+      )
     }
   }
 }

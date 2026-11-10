@@ -52,13 +52,13 @@ pub(all) struct Schema {
 ///|
 /// Start an object schema.
 pub fn Schema::object() -> Schema {
-  { fields: [] }
+  { fields: [], }
 }
 
 ///|
 /// Add a required field.
 pub fn Schema::req(self : Schema, field : Field) -> Schema {
-  self.fields.push({ ..field, required: true })
+  self.fields.push({ ..field, required: true, })
   self
 }
 
@@ -67,12 +67,8 @@ pub fn Schema::req(self : Schema, field : Field) -> Schema {
 ///
 /// The default is returned by `decode` when the key is absent, so a tool never
 /// sees a missing optional field as an empty string it has to special-case.
-pub fn Schema::opt(
-  self : Schema,
-  field : Field,
-  default~ : String,
-) -> Schema {
-  self.fields.push({ ..field, required: false, default: Some(default) })
+pub fn Schema::opt(self : Schema, field : Field, default~ : String) -> Schema {
+  self.fields.push({ ..field, required: false, default: Some(default), })
   self
 }
 
@@ -110,11 +106,7 @@ pub fn Schema::to_json(self : Schema) -> Json {
 /// `min_len` is optional and maps to both the JSON Schema `minLength` keyword
 /// and a decode-time check, so the two cannot disagree about whether an empty
 /// string is allowed.
-pub fn string(
-  name~ : String,
-  description~ : String,
-  min_len? : Int,
-) -> Field {
+pub fn string(name~ : String, description~ : String, min_len? : Int32) -> Field {
   let base : Map[String, Json] = Map([])
   base["type"] = Json::string("string")
   base["description"] = Json::string(description)
@@ -129,19 +121,16 @@ pub fn string(
         match min_len {
           Some(n) =>
             if s.length() < n {
-              Err({
-                path,
-                message: "must be at least \{n} characters",
-              })
+              Err({ path, message: "must be at least \{n} characters", })
             } else {
               Ok(s)
             }
           None => Ok(s)
         }
-      _ => Err({ path, message: "must be of type string" })
+      _ => Err({ path, message: "must be of type string", })
     }
   }
-  { name, schema, required: false, default: None, decode }
+  { name, schema, required: false, default: None, decode, }
 }
 
 ///|
@@ -149,7 +138,7 @@ pub fn string(
 pub fn integer(
   name~ : String,
   description~ : String,
-  minimum? : Int,
+  minimum? : Int32,
 ) -> Field {
   let base : Map[String, Json] = Map([])
   base["type"] = Json::string("integer")
@@ -163,22 +152,22 @@ pub fn integer(
     match value {
       Number(n, ..) => {
         if n != n.floor() {
-          return Err({ path, message: "must be an integer" })
+          return Err({ path, message: "must be an integer", })
         }
         match minimum {
           Some(min) =>
             if n < Double::from_int(min) {
-              Err({ path, message: "must be >= \{min}" })
+              Err({ path, message: "must be >= \{min}", })
             } else {
               Ok(n.to_int().to_string())
             }
           None => Ok(n.to_int().to_string())
         }
       }
-      _ => Err({ path, message: "must be of type integer" })
+      _ => Err({ path, message: "must be of type integer", })
     }
   }
-  { name, schema, required: false, default: None, decode }
+  { name, schema, required: false, default: None, decode, }
 }
 
 ///|
@@ -205,10 +194,10 @@ pub fn enum_string(
             message: "must be one of \{values.map(fn(v) { "\"\{v}\"" }).join(", ")}",
           })
         }
-      _ => Err({ path, message: "must be of type string" })
+      _ => Err({ path, message: "must be of type string", })
     }
   }
-  { name, schema, required: false, default: None, decode }
+  { name, schema, required: false, default: None, decode, }
 }
 
 ///|
@@ -228,13 +217,10 @@ pub(all) struct Args {
 /// Every failure is a `SchemaError` with the field path, which is what the
 /// drift tests assert on: the message must name *where* the problem is, not just
 /// that one exists.
-pub fn Schema::decode(
-  self : Schema,
-  json : Json,
-) -> Result[Args, SchemaError] {
+pub fn Schema::decode(self : Schema, json : Json) -> Result[Args, SchemaError] {
   let obj = match json {
     Object(fields) => fields
-    _ => return Err({ path: "", message: "arguments must be a JSON object" })
+    _ => return Err({ path: "", message: "arguments must be a JSON object", })
   }
   let values : Map[String, String] = Map([])
   let declared : Map[String, Bool] = Map([])
@@ -262,7 +248,7 @@ pub fn Schema::decode(
   // `additionalProperties: false` the rendered schema advertises.
   for key, _ in obj {
     if !declared.contains(key) {
-      return Err({ path: key, message: "unknown field" })
+      return Err({ path: key, message: "unknown field", })
     }
   }
   Ok({ values, })
@@ -284,3 +270,6 @@ pub fn Args::get(self : Args, name : String) -> String {
 pub fn Args::has(self : Args, name : String) -> Bool {
   self.values.contains(name)
 }
+
+///|
+pub extend Args with @debug.Debug::{to_repr}
