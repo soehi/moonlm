@@ -17,6 +17,7 @@
 ///|
 /// Everything the forward pass needs for one token: the weights and the
 /// recurrent state.
+#derive(Debug)
 pub(all) struct Model {
   config : ModelConfig
   /// Token embedding, [n_embd, vocab_size]: row `id` is the embedding.
@@ -31,7 +32,7 @@ pub(all) struct Model {
   cache : KVCache
   /// Scratch buffers, allocated once and reused for every token.
   scratch : Scratch
-} derive(Debug)
+}
 
 ///|
 /// The weights of one transformer block.
@@ -40,6 +41,7 @@ pub(all) struct Model {
 /// omit them; Qwen2 ships one per projection, and skipping them would leave the
 /// outputs plausible but wrong. They are loaded from the f32 tensors, never
 /// folded into the quantized weights (which would require re-quantizing).
+#derive(Debug)
 pub(all) struct LayerWeights {
   attn_norm : Vector
   wq : Matrix
@@ -53,7 +55,7 @@ pub(all) struct LayerWeights {
   w_gate : Matrix
   w_up : Matrix
   w_down : Matrix
-} derive(Debug)
+}
 
 ///|
 /// Growable KV cache: [n_layer][n_head_kv][capacity][head_dim].
@@ -69,6 +71,7 @@ pub(all) struct LayerWeights {
 /// The position dimension is the third one, so growth re-lays out every
 /// (layer, head) block rather than extending in place; `grow_to` rebuilds both
 /// arrays and copies the live region across.
+#derive(Debug)
 pub(all) struct KVCache {
   n_layer : Int32
   n_head_kv : Int32
@@ -82,7 +85,7 @@ pub(all) struct KVCache {
   mut v : FixedArray[Float]
   /// Number of positions written so far.
   mut len : Int32
-} derive(Debug)
+}
 
 ///|
 /// Positions allocated before any growth.
@@ -179,6 +182,7 @@ pub fn KVCache::reset(self : KVCache) -> Unit {
 
 ///|
 /// Scratch buffers reused across tokens, so the hot path allocates nothing.
+#derive(Debug)
 pub(all) struct Scratch {
   /// Current hidden state, `n_embd`.
   hidden : FixedArray[Float]
@@ -201,7 +205,7 @@ pub(all) struct Scratch {
   logits : FixedArray[Float]
   /// Attention scores for one head over the cached positions.
   scores : FixedArray[Float]
-} derive(Debug)
+}
 
 ///|
 /// Allocate the scratch buffers for a config.

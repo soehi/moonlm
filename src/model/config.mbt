@@ -12,6 +12,7 @@
 /// `GGML_ROPE_TYPE_NORMAL` / `GGML_ROPE_TYPE_NEOX`. The two rotations produce
 /// the same values only when the head is one rotating pair wide, so a model
 /// must be rotated with the variant it was trained on.
+#derive(Eq, Debug)
 pub(all) enum RopeType {
   /// Consecutive pairs `(x[2i], x[2i+1])`; produced layout `[cscscscs]`.
   /// llama.cpp selects this for the llama / SmolLM2 architectures.
@@ -20,11 +21,12 @@ pub(all) enum RopeType {
   /// llama.cpp selects this for Qwen2, whose GGUF metadata says so with
   /// `<arch>.rope.<layer>.type = "neox"`.
   NEOX
-} derive(Eq, Debug)
+}
 
 ///|
 /// Transformer hyperparameters for a decoder-only, RMSNorm-pre-norm,
 /// RoPE, GQA, SwiGLU model (the SmolLM2 / Llama family layout).
+#derive(Eq, Debug)
 pub(all) struct ModelConfig {
   /// `general.architecture` verbatim, e.g. "llama".
   architecture : String
@@ -56,10 +58,11 @@ pub(all) struct ModelConfig {
   rope_type : RopeType
   /// Whether the LM head reuses the token embedding matrix.
   tied_lm_head : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 /// Config-loading errors.
+#derive(Eq, Debug)
 pub(all) suberror ModelError {
   /// A required metadata key was absent.
   MissingKey(key~ : String)
@@ -81,7 +84,7 @@ pub(all) suberror ModelError {
   Tokenizer(reason~ : String)
   /// The architecture is not implemented by this build.
   UnsupportedArchitecture(arch~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub fn ModelError::message(self : ModelError) -> String {

@@ -5,7 +5,8 @@ env:
   # /binaries/<version>/... path answers 403), so an exact-match assertion
   # would go red on each upstream release for no reason. Numeric comparison,
   # so 0.10.18 is below 0.10.19 while 0.11 and 1.0 still pass.
-  # Locally verified: moon 0.1.20261029 / moonc v0.10.19.
+  # Official stable CI: moon 0.1.20261104 / moonc v0.10.20.
+  # Old 0.10.19 preview builds from October do not implement #derive yet.
   MOONC_MIN: "0.10.19"
 
 on:

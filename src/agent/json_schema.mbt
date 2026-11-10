@@ -12,10 +12,11 @@
 
 ///|
 /// One validation failure, with the JSON path where it occurred.
+#derive(Eq, Debug)
 pub(all) struct SchemaError {
   path : String
   message : String
-} derive(Eq, Debug)
+}
 
 ///|
 pub fn SchemaError::to_string(self : SchemaError) -> String {

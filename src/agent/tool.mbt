@@ -18,6 +18,7 @@
 /// - `SandboxDenied` and `IoFailure` are ENVIRONMENT failures. They are returned
 ///   as observations so the model can choose a different path or tool — a
 ///   denied `../` is information ("you may not go there"), not a malformed call.
+#derive(Eq, Debug)
 pub(all) enum ToolError {
   /// Arguments did not match the tool's schema, or were not a JSON object.
   InvalidArguments(message~ : String)
@@ -25,7 +26,7 @@ pub(all) enum ToolError {
   SandboxDenied(message~ : String)
   /// The operation failed in the environment (missing file, permissions, ...).
   IoFailure(message~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub fn ToolError::message(self : ToolError) -> String {
@@ -48,6 +49,7 @@ pub fn ToolError::is_fatal(self : ToolError) -> Bool {
 
 ///|
 /// What a successful tool call produced.
+#derive(Eq, Debug)
 pub(all) struct ToolOutput {
   /// Text handed back to the model as the observation.
   text : String
@@ -64,7 +66,7 @@ pub(all) struct ToolOutput {
   /// ("reads the directory listing, invents what each file says") is turned
   /// into an honest non-answer rather than a confident fabrication.
   provides_evidence : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 /// A capability the model can call.

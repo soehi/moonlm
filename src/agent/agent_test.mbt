@@ -11,11 +11,12 @@
 ///
 /// Encoding is by whitespace so token counts are predictable, and the context
 /// length is a parameter so the overflow path is reachable.
+#derive(Debug)
 struct ScriptedEngine {
   replies : Array[String]
   mut calls : Int32
   ctx : Int32
-} derive(Debug)
+}
 
 ///|
 impl @engine.Engine for ScriptedEngine with fn encode(
@@ -77,9 +78,10 @@ let scripted_reply : Ref[String] = Ref("")
 
 ///|
 /// A tool that records its calls and echoes its `path` argument.
+#derive(Debug)
 struct EchoTool {
   calls : Ref[Array[String]]
-} derive(Debug)
+}
 
 ///|
 impl Tool for EchoTool with fn name(self : EchoTool) -> String {
@@ -124,7 +126,8 @@ impl Tool for EchoTool with fn invoke(self : EchoTool, args : Json) -> Result[
 
 ///|
 /// A tool that always denies access, for the sandbox-observation path.
-struct DenyTool {} derive(Debug)
+#derive(Debug)
+struct DenyTool {}
 
 ///|
 impl Tool for DenyTool with fn name(self : DenyTool) -> String {

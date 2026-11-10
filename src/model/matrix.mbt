@@ -58,6 +58,7 @@ fn bv_scale_min_k4(j : Int32, buf : Bytes, q_off : Int32) -> (Int32, Int32) {
 /// addressed as `base + row * row_bytes` and the kernels are unchanged. The
 /// cost of sharing is lifetime: the buffer stays alive as long as any matrix
 /// references it, which is exactly what is wanted while the model is loaded.
+#derive(Debug)
 pub(all) struct Matrix {
   /// Tensor name, for error messages.
   name : String
@@ -73,7 +74,7 @@ pub(all) struct Matrix {
   data : Bytes
   /// Byte offset of this tensor's payload within `data`.
   base : Int32
-} derive(Debug)
+}
 
 ///|
 /// Bytes of this matrix's payload.
@@ -739,10 +740,11 @@ fn dot_q6_K(
 
 ///|
 /// A 1-D weight vector (RMSNorm gains, biases), stored as floats.
+#derive(Debug)
 pub(all) struct Vector {
   name : String
   data : FixedArray[Float]
-} derive(Debug)
+}
 
 ///|
 /// Load a 1-D tensor as a float vector.

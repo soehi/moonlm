@@ -145,6 +145,7 @@ fn chars_to_string(chars : Array[Char], start : Int32, end : Int32) -> String {
 
 ///|
 /// Which pre-tokenizer a model uses, resolved from `tokenizer.ggml.pre`.
+#derive(Eq, Debug)
 pub(all) enum Pretokenizer {
   /// The SmolLM2 / GPT-2 rule: optional leading space, letter runs, and
   /// `Digits(individual_digits)`.
@@ -153,7 +154,7 @@ pub(all) enum Pretokenizer {
   /// pre-tokenizer, `\p{N}` is a single character, contractions are
   /// case-insensitive).
   Qwen2
-} derive(Eq, Debug)
+}
 
 ///|
 /// Split raw text with the selected pre-tokenizer.

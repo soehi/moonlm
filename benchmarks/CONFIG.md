@@ -13,7 +13,7 @@ calibrated against and why they have the slack they do.
 | Item | Value |
 |---|---|
 | MoonBit | `0.1.20260819` (original baseline) |
-| MoonBit, last verified | `moon 0.1.20261029` / `moonc v0.10.19` |
+| Official stable toolchain in CI | `moon 0.1.20261104` / `moonc v0.10.20` (minimum supported stable compiler: `0.10.19`) |
 | Target (native) | `native`, `--release` |
 | Target (browser) | `js`, `--release` |
 | Threads | 1 (single-threaded; the engine has no threading) |

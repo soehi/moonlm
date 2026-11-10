@@ -207,9 +207,10 @@ pub fn enum_string(
 /// patterns, expressions); `integer` decodes to its decimal text. `get` is the
 /// only accessor, so a tool cannot reach into the raw JSON and reintroduce a
 /// second decoding path.
+#derive(Debug)
 pub(all) struct Args {
   values : Map[String, String]
-} derive(Debug)
+}
 
 ///|
 /// Decode `json` against `schema`.

@@ -11,15 +11,17 @@
 
 ///|
 /// Special-token id slots a model can reference.
+#derive(Debug, Eq)
 pub(all) struct SpecialIds {
   bos : Int32
   eos : Int32
   unk : Int32
   pad : Int32
-} derive(Debug, Eq)
+}
 
 ///|
 /// A loaded GPT-2 BPE tokenizer.
+#derive(Debug)
 pub(all) struct Tokenizer {
   vocab : Array[String]
   /// token string -> id, for the final BPE lookup.
@@ -32,10 +34,11 @@ pub(all) struct Tokenizer {
   ids : SpecialIds
   add_bos : Bool
   add_eos : Bool
-} derive(Debug)
+}
 
 ///|
 /// Tokenizer construction and load errors.
+#derive(Eq, Debug)
 pub(all) suberror TokenizerError {
   /// `tokenizer.ggml.model` was present but not a supported value.
   UnsupportedModel(model~ : String)
@@ -51,7 +54,7 @@ pub(all) suberror TokenizerError {
   EmptyToken(index~ : Int32)
   /// The merges array references tokens absent from the vocab.
   MergeNotInVocab(index~ : Int32, token~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 pub fn TokenizerError::message(self : TokenizerError) -> String {

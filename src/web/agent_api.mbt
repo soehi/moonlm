@@ -49,7 +49,8 @@ fn demo_registry() -> @agent.ToolRegistry {
 
 ///|
 /// `demo_list`: names of the virtual files.
-struct DemoListTool {} derive(Debug)
+#derive(Debug)
+struct DemoListTool {}
 
 ///|
 pub impl @agent.Tool for DemoListTool with fn name(self : DemoListTool) -> String {
@@ -92,7 +93,8 @@ pub impl @agent.Tool for DemoListTool with fn invoke(
 
 ///|
 /// `demo_read`: read one virtual file by exact name.
-struct DemoReadTool {} derive(Debug)
+#derive(Debug)
+struct DemoReadTool {}
 
 ///|
 pub impl @agent.Tool for DemoReadTool with fn name(self : DemoReadTool) -> String {

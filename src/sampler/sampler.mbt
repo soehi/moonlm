@@ -14,9 +14,10 @@
 /// testable at all. xorshift64* has a period of 2^64-1 and passes the usual
 /// batteries for sampling use; it is not cryptographic and is not used for
 /// anything that needs to be.
+#derive(Debug)
 pub(all) struct Rng {
   mut state : UInt64
-} derive(Debug)
+}
 
 ///|
 /// Create a generator. A zero seed is remapped because xorshift64* has a fixed
@@ -50,6 +51,7 @@ pub fn Rng::next_double(self : Rng) -> Double {
 
 ///|
 /// How to pick the next token from logits.
+#derive(Eq, Debug)
 pub(all) enum Sampler {
   /// Always the highest-logit token. Deterministic.
   Greedy
@@ -60,10 +62,11 @@ pub(all) enum Sampler {
   /// Temperature scaling, then keep the smallest set whose probability mass
   /// reaches `p`.
   TopP(temperature~ : Double, p~ : Double)
-} derive(Eq, Debug)
+}
 
 ///|
 /// Sampling errors.
+#derive(Eq, Debug)
 pub(all) suberror SamplerError {
   /// A non-positive temperature would divide by zero or flip the distribution.
   BadTemperature(value~ : Double)
@@ -73,7 +76,7 @@ pub(all) suberror SamplerError {
   BadP(value~ : Double)
   /// The logits array was empty.
   EmptyLogits
-} derive(Eq, Debug)
+}
 
 ///|
 pub fn SamplerError::message(self : SamplerError) -> String {

@@ -4,6 +4,7 @@
 
 ///|
 /// Options shared by generate, chat and bench.
+#derive(Debug)
 pub(all) struct GenOptions {
   max_tokens : Int32
   sampler : @sampler.Sampler
@@ -16,7 +17,7 @@ pub(all) struct GenOptions {
   /// different token" from "sampled the same token, rendered differently", so a
   /// cross-implementation check needs the ids.
   dump_tokens : Bool
-} derive(Debug)
+}
 
 ///|
 /// Parse the flags shared by the generation subcommands.

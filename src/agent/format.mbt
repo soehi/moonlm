@@ -12,23 +12,26 @@
 
 ///|
 /// Which tool-call dialect a model speaks.
+#derive(Eq, Debug)
 pub(all) enum ToolCallFormat {
   /// Qwen2/Qwen2.5: `<tool_call>{"name": ..., "arguments": {...}}</tool_call>`.
   /// The chat template states this shape verbatim inside the system prompt.
   Qwen2Xml
-} derive(Eq, Debug)
+}
 
 ///|
 /// One parsed call, before schema validation.
+#derive(Eq, Debug)
 pub(all) struct ParsedCall {
   /// Tool name exactly as the model wrote it.
   name : String
   /// The `arguments` value; an object on success.
   arguments : Json
-} derive(Eq, Debug)
+}
 
 ///|
 /// A completion split into text and calls.
+#derive(Eq, Debug)
 pub(all) struct ParsedCompletion {
   /// Text outside the delimiters, trimmed of surrounding whitespace.
   text : String
@@ -38,7 +41,7 @@ pub(all) struct ParsedCompletion {
   /// valid call and a broken one; the valid one still runs and the broken one
   /// is reported.
   errors : Array[String]
-} derive(Eq, Debug)
+}
 
 ///|
 /// Whether a completion contains anything actionable.

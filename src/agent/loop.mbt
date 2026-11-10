@@ -11,13 +11,15 @@
 ///
 /// Kept as data rather than a function so the CLI and the browser build the
 /// same prompt, and so a new family is a new value plus a `match` arm.
+#derive(Eq, Debug)
 pub(all) enum PromptStyle {
   /// Qwen2/Qwen2.5 ChatML, including the `<tools>` block the template expects.
   Qwen2ChatMl
-} derive(Eq, Debug)
+}
 
 ///|
 /// Loop limits.
+#derive(Eq, Debug)
 pub(all) struct AgentConfig {
   /// Maximum assistant turns (generations) before stopping.
   max_steps : Int32
@@ -41,7 +43,7 @@ pub(all) struct AgentConfig {
   /// that into an explicit "I need to read them" retry instead of a confident
   /// wrong answer. Set false for tasks that legitimately need no tools.
   require_evidence : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 /// Defaults tuned for a 0.5B model on a 32k-context file: few steps (it does not
@@ -62,6 +64,7 @@ pub fn AgentConfig::default() -> AgentConfig {
 
 ///|
 /// One entry in the conversation the loop maintains.
+#derive(Eq, Debug)
 pub(all) enum Message {
   /// A system or user turn, rendered verbatim.
   Text(role~ : String, content~ : String)
@@ -70,10 +73,11 @@ pub(all) enum Message {
   Assistant(content~ : String)
   /// A tool observation, rendered as a tool response.
   Tool(name~ : String, content~ : String)
-} derive(Eq, Debug)
+}
 
 ///|
 /// The outcome of a whole run.
+#derive(Eq, Debug)
 pub(all) struct AgentResult {
   /// The model's final text answer (empty when the loop stopped on a budget).
   answer : String
@@ -83,20 +87,22 @@ pub(all) struct AgentResult {
   stop : StopReason
   /// Assistant turns used.
   steps : Int32
-} derive(Eq, Debug)
+}
 
 ///|
 /// One executed tool call.
+#derive(Eq, Debug)
 pub(all) struct ExecutedCall {
   name : String
   arguments : String
   /// Observation text returned to the model (after truncation).
   observation : String
   ok : Bool
-} derive(Eq, Debug)
+}
 
 ///|
 /// Why the loop stopped.
+#derive(Eq, Debug)
 pub(all) enum StopReason {
   /// The model produced a final answer with no tool call.
   Answered
@@ -109,7 +115,7 @@ pub(all) enum StopReason {
   EngineError(message~ : String)
   /// The conversation could not be made to fit the context even after folding.
   ContextOverflow
-} derive(Eq, Debug)
+}
 
 ///|
 /// Truncate an observation to `limit` characters, appending a marker so the

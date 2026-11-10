@@ -24,9 +24,10 @@ pub let max_grep_matches : Int32 = 100
 
 ///|
 /// `list_dir`: entry names of a workspace directory.
+#derive(Debug)
 pub(all) struct ListDirTool {
   sandbox : Sandbox
-} derive(Debug)
+}
 
 ///|
 pub impl @agent.Tool for ListDirTool with fn name(self : ListDirTool) -> String {
@@ -94,9 +95,10 @@ pub impl @agent.Tool for ListDirTool with fn invoke(
 
 ///|
 /// `read_file`: the text of a workspace file, size-capped.
+#derive(Debug)
 pub(all) struct ReadFileTool {
   sandbox : Sandbox
-} derive(Debug)
+}
 
 ///|
 pub impl @agent.Tool for ReadFileTool with fn name(self : ReadFileTool) -> String {
@@ -183,9 +185,10 @@ pub impl @agent.Tool for ReadFileTool with fn invoke(
 /// Deliberately a plain substring scan, not a regex: the argument comes from a
 /// model, and a regex engine would be both a dependency and a way to make one
 /// call cost unbounded time. Recursion is bounded by `max_grep_files`.
+#derive(Debug)
 pub(all) struct GrepTextTool {
   sandbox : Sandbox
-} derive(Debug)
+}
 
 ///|
 pub impl @agent.Tool for GrepTextTool with fn name(self : GrepTextTool) -> String {

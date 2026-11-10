@@ -3,7 +3,8 @@
 
 ///|
 /// `calc`: evaluate an arithmetic expression.
-pub(all) struct CalcTool {} derive(Debug)
+#derive(Debug)
+pub(all) struct CalcTool {}
 
 ///|
 pub impl @agent.Tool for CalcTool with fn name(self : CalcTool) -> String {

@@ -35,6 +35,7 @@ pub(open) trait Engine {
 
 ///|
 /// What a generation run did, for reporting and benchmarking.
+#derive(Eq, Debug)
 pub(all) struct GenerationStats {
   /// Tokens in the prompt after encoding.
   prompt_tokens : Int32
@@ -46,7 +47,7 @@ pub(all) struct GenerationStats {
   prefill_seconds : Double
   /// Seconds spent decoding (the per-token loop).
   decode_seconds : Double
-} derive(Eq, Debug)
+}
 
 ///|
 /// Tokens per second over the decode loop; the number that actually describes
@@ -70,6 +71,7 @@ pub fn monotonic_seconds() -> Double {
 
 ///|
 /// A GGUF model evaluated entirely in MoonBit.
+#derive(Debug)
 pub(all) struct PureEngine {
   model : @model.Model
   tokenizer : @tokenizer.Tokenizer
@@ -77,7 +79,7 @@ pub(all) struct PureEngine {
   path : String
   /// Supported chat profile derived from GGUF model identity, not the filename.
   chat_profile : String
-} derive(Debug)
+}
 
 ///|
 /// Load a model from an in-memory GGUF buffer.

@@ -13,6 +13,7 @@
 
 ///|
 /// The merge rank table: parallel arrays sorted by (left, right).
+#derive(Debug)
 pub(all) struct MergeTable {
   /// Left token string of each pair, in sorted order for binary search.
   lefts : Array[String]
@@ -24,7 +25,7 @@ pub(all) struct MergeTable {
   /// pair, parallel to the sorted arrays. Selection during BPE compares THIS,
   /// not the sorted position: alphabetical order and merge priority differ.
   priority : Array[Int32]
-} derive(Debug)
+}
 
 ///|
 /// Build a merge table from `tokenizer.ggml.merges` entries ("first second").

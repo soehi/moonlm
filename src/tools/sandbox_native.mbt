@@ -12,12 +12,13 @@
 
 ///|
 /// A resolved workspace root.
+#derive(Debug, Eq)
 pub(all) struct Sandbox {
   /// Canonical absolute path of the workspace, with links resolved.
   root : String
   /// Whether prefix comparison ignores ASCII case (Windows).
   fold_case : Bool
-} derive(Debug, Eq)
+}
 
 ///|
 /// Open a workspace directory as a sandbox.
